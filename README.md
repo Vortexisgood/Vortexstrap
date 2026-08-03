@@ -73,6 +73,19 @@ This forces Vortex to use Windows' built-in **WARP (Microsoft Basic Render Drive
 
 ---
 
+## Is this Bannable?
+
+> **Official Developer Response:**  
+> *"If it's not an exploit, then it should be okay."* — **Halo** (Vortex Developer)
+
+<p align="center">
+  <img src="images/halo-approval.png" alt="Developer Halo Approval" width="80%" />
+</p>
+
+VortexStrap only modifies local client settings (fonts, environment variables, cursors). It does **not** touch server-side logic, memory execution, or game physics, and is completely safe to use.
+
+---
+
 ## Disclaimer
 
 VortexStrap is an **unofficial community tool** and is not affiliated with the Vortex development team. It only modifies local launcher behavior (font files, environment variables) and does not exploit or alter the game's server-side logic.
