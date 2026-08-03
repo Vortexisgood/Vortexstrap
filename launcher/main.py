@@ -1,9 +1,11 @@
 """
-Vortex Alternative Launcher
-- Binary font patcher (Replace Inter font)
-- Custom animated & static cursors
-- Screenshot gallery & F12 hardware hotkey
-- Render & Graphics settings (Vulkan, DX12, High Performance GPU)
+VortexStrap - Alternative launcher for Vortex
+
+Features:
+  - Binary font patcher: replaces Inter with any TTF/OTF font
+  - Custom cursors (animated GIF or built-in styles)
+  - In-game screenshot capture (F12 / PrtScn hotkey)
+  - Render backend control (DX12, DX11, Vulkan, OpenGL, software fallback)
 """
 
 import sys, os, struct, shutil, json, subprocess, datetime, ctypes, re
@@ -23,7 +25,7 @@ from PyQt6.QtGui import (
     QGuiApplication, QShortcut, QKeySequence, QMovie, QImage
 )
 
-# ── Yollar & Akıllı Vortex.exe Bulucu ──────────────────────────────────────────
+# Paths and Vortex.exe detection
 BASE_DIR = Path(sys.argv[0]).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
 
 def find_vortex_exe() -> Path:
@@ -51,8 +53,8 @@ GIF_CURSOR      = CURSORS_DIR / "cursor.gif"
 FONTS_DIR.mkdir(exist_ok=True)
 SCREENSHOTS_DIR.mkdir(exist_ok=True)
 
-# ── Dinamik Inter TTF Bulucu (Update-safe) ────────────────────────────────────
-# Her offset için bilinen spacing (TTF boyutundan hesaplandı)
+# Known Inter font locations inside Vortex.exe, with the byte size of each slot.
+# These were found by scanning the binary; should still work across minor game updates.
 INTER_OFFSET_SPACING: dict[int, int] = {
     65_337_752:  407_054,   # Inter Regular 1
     68_228_285:  407_054,   # Inter Regular 2
@@ -65,15 +67,15 @@ INTER_OFFSET_SPACING: dict[int, int] = {
 
 def _find_inter_offsets_in_exe(exe_path: Path) -> list[int]:
     """
-    Vortex.exe içindeki TÜM Inter font TTF blob'larını tespit eder.
-    Önce bilinen offsetleri dener, bulamazsa dinamik tarar.
+    Scans Vortex.exe for embedded Inter font TTF blobs.
+    Tries the known offsets first; falls back to returning all known positions.
     """
     try:
         data = exe_path.read_bytes()
     except Exception:
         return []
 
-    # Bilinen tüm Inter font konumları (yeni + eski offsetler)
+    # Check each known offset and verify the TTF header bytes
     CONFIRMED_OFFSETS = sorted(INTER_OFFSET_SPACING.keys())
 
     verified = []
@@ -83,7 +85,7 @@ def _find_inter_offsets_in_exe(exe_path: Path) -> list[int]:
             if hdr in (b'\x00\x01\x00\x00', b'OTTO'):
                 verified.append(off)
             elif hdr == b'\x00\x00\x00\x00':
-                # Daha önce patch uygulanmış olabilir — yine de dahil et
+                # Slot was already patched (zeroed out), still include it
                 verified.append(off)
 
     return sorted(verified) if verified else CONFIRMED_OFFSETS
@@ -107,7 +109,7 @@ def get_inter_offsets(exe_path: Path, cfg: dict) -> tuple[list[int], dict[int, i
 
 
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# Config
 DEFAULT_CONFIG = {
     "accent":              "#7C3AED",
     "ui_font":             "Segoe UI",
@@ -131,14 +133,14 @@ def load_cfg():
 def save_cfg(cfg):
     CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), "utf-8")
 
-# ── Global Hotkey Thread (F12 ve PrintScreen Tuşları - Donanım Seviyesi) ──────
+# Background thread that listens for F12 / PrtScn at the OS level
 class GlobalHotkeyThread(QThread):
     triggered = pyqtSignal()
 
     def run(self):
         user32 = ctypes.windll.user32
-        VK_F12      = 0x7B   # F12 Tuşu
-        VK_SNAPSHOT = 0x2C   # PrintScreen (PrtScn) Tuşu
+        VK_F12      = 0x7B   # F12
+        VK_SNAPSHOT = 0x2C   # PrtScn
         was_pressed = False
 
         while not self.isInterruptionRequested():
@@ -155,7 +157,7 @@ class GlobalHotkeyThread(QThread):
             self.msleep(40)
 
 
-# ── Özel İmleç Çizici (Custom Cursor Generator) ──────────────────────────────
+# Draws built-in cursor shapes as QPixmaps
 def create_custom_cursor(cursor_type: str, accent: str = "#7C3AED") -> QCursor:
     if cursor_type == "system":
         return QCursor(Qt.CursorShape.ArrowCursor)
@@ -230,7 +232,7 @@ def create_custom_cursor(cursor_type: str, accent: str = "#7C3AED") -> QCursor:
     return QCursor(Qt.CursorShape.ArrowCursor)
 
 
-# ── QPixmap → Windows HCURSOR ─────────────────────────────────────────────────
+# Converts a QPixmap to a Windows HCURSOR for system-wide cursor replacement
 def _pixmap_to_hcursor(pixmap: QPixmap, hotspot_x: int = 0, hotspot_y: int = 0):
     size = 32
     scaled = pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
@@ -283,7 +285,7 @@ def _restore_system_cursor():
     )
 
 
-# ── Animated GIF Cursor (Launcher + Vortex.exe system-wide) ──────────────────
+# Drives a GIF cursor frame-by-frame, optionally replacing the system cursor
 class GifCursorAnimator(QTimer):
     def __init__(self, gif_path: Path, system_wide: bool = False, parent=None):
         super().__init__(parent)
@@ -317,11 +319,11 @@ class GifCursorAnimator(QTimer):
         pix = self._frames[self._idx % len(self._frames)]
         self._idx += 1
 
-        # Her durumda Launcher penceresi içinde görünmesi için Qt override cursor uygula
+        # Always update the Qt override cursor so it shows inside the launcher window
         QApplication.restoreOverrideCursor()
         QApplication.setOverrideCursor(QCursor(pix, 0, 0))
 
-        # Eğer system_wide açıksa Windows genelinde (Vortex.exe oyunu vb.) değiştir
+        # If system-wide mode is on, also push the cursor to the Windows system
         if self._system_wide:
             try:
                 hc = _pixmap_to_hcursor(pix, 0, 0)
@@ -338,7 +340,7 @@ class GifCursorAnimator(QTimer):
             QApplication.restoreOverrideCursor()
 
 
-# ── TTF boyutu bul ────────────────────────────────────────────────────────────
+# Calculates the actual byte size of a TTF blob by reading its table directory
 def get_ttf_size(data: bytes, offset: int) -> int:
     try:
         num_tables = struct.unpack_from('>H', data, offset + 4)[0]
@@ -354,7 +356,8 @@ def get_ttf_size(data: bytes, offset: int) -> int:
     except:
         return INTER_TTF_SPACING
 
-# ── Windows Registry Font Substitution (%100 Garantili Yöntem) ─────────────────
+# Adds/removes an Inter → custom font substitution in the Windows registry.
+# This makes any app that asks for 'Inter' use the chosen font instead.
 class RegistryFontSubstitutor:
     @staticmethod
     def apply_substitution(target_font_name: str) -> tuple[bool, str]:
@@ -392,11 +395,11 @@ class RegistryFontSubstitutor:
         except Exception as e:
             return False, f"Registry error: {e}"
 
-# ── Font Patcher ──────────────────────────────────────────────────────────────
+# Handles binary patching of Inter inside Vortex.exe and registry substitution
 class FontPatcher:
     @staticmethod
     def subset_ttf(font_path: str) -> tuple[str | None, str]:
-        """Fontu Latin & Türkçe karakter kümesiyle sıkıştırarak boyutunu küçültür."""
+        """Subsets the font to Latin + extended Latin characters to reduce file size."""
         try:
             from fontTools import subset
             from fontTools.ttLib import TTFont
@@ -406,7 +409,7 @@ class FontPatcher:
             options.layout_features = ["*"]
             options.name_IDs = ["*"]
 
-            # Türkçe ve Temel Latin karakter kümesi
+            # Basic Latin + Latin Extended (covers most European languages)
             unicodes = subset.parse_unicodes(
                 "U+0020-007E, U+00A0-00FF, U+0100-017F, "
                 "U+011E, U+011F, U+0130, U+0131, U+015E, U+015F"
@@ -444,7 +447,7 @@ class FontPatcher:
 
         offsets, spacing_map = get_inter_offsets(VORTEX_EXE, cfg or {})
 
-        print(f"[DEBUG] Offsets: {offsets}, Font size: {len(new_ttf):,}")
+        print(f"Offsets: {offsets}, font size: {len(new_ttf):,} bytes")
 
         if not offsets:
             return False, (
@@ -452,23 +455,23 @@ class FontPatcher:
                 "The EXE may have changed — please report this issue."
             )
 
-        # En küçük slotu bul ve boyut kontrolü yap
+        # Make sure the font fits in the smallest available slot
         min_spacing = min(spacing_map.get(off, 407_065) for off in offsets)
         if len(new_ttf) > min_spacing:
-            print(f"[DEBUG] ERROR: len(new_ttf) {len(new_ttf)} > min_spacing {min_spacing}")
+            print(f"Font too large: {len(new_ttf)} bytes, slot is {min_spacing} bytes")
             return False, (
                 f"Selected font ({len(new_ttf):,} bytes) exceeds the slot size "
                 f"({min_spacing:,} bytes).\nPlease select a smaller font."
             )
 
-        # Patch öncesi Vortex.exe çalışıyorsa kapat
+        # Kill Vortex if it's running so we can write to the EXE
         try:
             sp = __import__("subprocess")
             sp.run(["taskkill", "/f", "/im", "Vortex.exe"], capture_output=True)
         except:
             pass
 
-        # Font içindeki aile adını "Inter" olarak değiştir
+        # Rename the font family to 'Inter' so Vortex recognizes it
         try:
             from fontTools.ttLib import TTFont
             import io
@@ -481,15 +484,15 @@ class FontPatcher:
             out_buf = io.BytesIO()
             font_obj.save(out_buf)
             new_ttf = out_buf.getvalue()
-            print(f"[DEBUG] Font renamed to 'Inter', new size: {len(new_ttf):,}")
+            print(f"Font renamed to 'Inter', new size: {len(new_ttf):,} bytes")
         except Exception as e:
-            print(f"[WARNING] Could not rename font internal name: {e}")
+            print(f"Warning: could not rename font family name: {e}")
 
-        # 1. Windows Registry Font Substitution
+        # Step 1: registry substitution (Inter → chosen font name)
         font_stem = Path(new_font_path).stem
         RegistryFontSubstitutor.apply_substitution(font_stem)
 
-        # 2. Binary Exe Patching — her offset için kendi spacing'i kullan
+        # Step 2: write the new TTF bytes into every Inter slot in the EXE
         patched_count = 0
         for offset in offsets:
             spacing = spacing_map.get(offset, 407_065)
@@ -497,15 +500,15 @@ class FontPatcher:
                 exe_data[offset: offset + spacing] = b'\x00' * spacing
                 exe_data[offset: offset + len(new_ttf)] = new_ttf
                 patched_count += 1
-                print(f"[DEBUG] Patched offset {offset:,} (slot {spacing:,} bytes)")
+                print(f"Patched offset {offset:,} (slot {spacing:,} bytes)")
             except Exception as ex:
-                print(f"[WARNING] Patch failed at offset {offset:,}: {ex}")
+                print(f"Warning: patch failed at offset {offset:,}: {ex}")
 
         try:
             VORTEX_EXE.write_bytes(bytes(exe_data))
-            print(f"[DEBUG] EXE written successfully, {patched_count} offsets patched")
+            print(f"EXE written successfully, {patched_count} offsets patched")
         except Exception as e:
-            print(f"[WARNING] Exe write error (using Registry mode): {e}")
+            print(f"Warning: could not write EXE (registry substitution still active): {e}")
 
         return True, f"Font applied ({font_stem})! Restart Vortex to see changes."
 
@@ -520,7 +523,7 @@ class FontPatcher:
         except Exception as e:
             return False, f"Restore error: {e}"
 
-# ── Patch Worker (arka planda) ────────────────────────────────────────────────
+# Worker threads for running patch/restore/launch operations off the UI thread
 class PatchWorker(QThread):
     done  = pyqtSignal(bool, str)
 
@@ -564,7 +567,7 @@ class LaunchWorker(QThread):
         except Exception as e:
             self.error_sig.emit(str(e))
 
-# ── Arkaplan ──────────────────────────────────────────────────────────────────
+# Animated particle background widget
 class BgWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -603,7 +606,7 @@ class BgWidget(QWidget):
             )
         painter.end()
 
-# ── Card ──────────────────────────────────────────────────────────────────────
+# Rounded, semi-transparent card container
 class Card(QFrame):
     def paintEvent(self, _):
         p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -612,7 +615,7 @@ class Card(QFrame):
         p.drawRoundedRect(self.rect().adjusted(0,0,-1,-1), 14, 14)
         p.end()
 
-# ── Status Badge ──────────────────────────────────────────────────────────────
+# Colored status label shown at the bottom of the launcher
 class StatusBadge(QLabel):
     def set_ok(self, text):
         self.setText(f"✓  {text}")
@@ -631,7 +634,7 @@ class StatusBadge(QLabel):
         self.setStyleSheet("background:rgba(124,58,237,0.12);color:#A78BFA;border:1px solid rgba(124,58,237,0.4);"
                            "border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;")
 
-# ── Resim Önizleme Diyaloğu ──────────────────────────────────────────────────
+# Simple fullscreen image preview dialog for screenshots
 class ImagePreviewDialog(QDialog):
     def __init__(self, img_path: Path, parent=None):
         super().__init__(parent)
@@ -647,7 +650,7 @@ class ImagePreviewDialog(QDialog):
             lbl.setPixmap(pix.scaled(720, 460, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         lay.addWidget(lbl)
 
-# ── Ana Pencere ───────────────────────────────────────────────────────────────
+# Main launcher window
 class VortexLauncher(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -672,7 +675,7 @@ class VortexLauncher(QMainWindow):
 
         self._apply_cursor(self.cfg.get("custom_cursor", "neon_arrow"))
 
-        # F12 Kısayolu ve Global Hotkey Başlatma
+        # F12 shortcut (within the launcher window) + global OS-level hotkey
         self.hotkey_thread = GlobalHotkeyThread()
         self.hotkey_thread.triggered.connect(self._take_screenshot)
         self.hotkey_thread.start()
@@ -749,7 +752,7 @@ class VortexLauncher(QMainWindow):
                 winsound.Beep(1200, 120)
             except:
                 pass
-            self.badge.set_ok(f"📸 Ekran görüntüsü alındı: {filename.name}")
+            self.badge.set_ok(f"Screenshot saved: {filename.name}")
             self._reload_gallery()
 
     def _get_render_env(self) -> tuple[dict, list]:
@@ -757,7 +760,8 @@ class VortexLauncher(QMainWindow):
         env        = {}
         extra_args = []
         
-        # ── Software Rendering Override (CPU Fallback for unsupported GPUs) ──
+        # Software rendering mode: forces WARP (Microsoft's CPU-based DX12 renderer).
+        # Use this if the GPU doesn't meet Vortex's minimum requirements.
         if self.cfg.get("software_rendering", False):
             # Microsoft Basic Render Driver is Windows' built-in DX12 software rasterizer (WARP)
             env["WGPU_ADAPTER_NAME"] = "Microsoft Basic Render Driver"
@@ -771,7 +775,7 @@ class VortexLauncher(QMainWindow):
 
         backend    = self.cfg.get("render_backend", "auto")
 
-        # ── Backend / WGPU env vars ──────────────────────────────────────────
+        # Set the WGPU backend. If 'auto', leave it unset so wgpu picks the best one.
         # WGPU_BACKEND accepted values (wgpu-rs): vulkan, metal, dx12, dx11, gl
         # Note: 'gl' uses ANGLE on Windows which may crash on older GPU drivers.
         # For OpenGL fallback on Windows the safest option is dx11 → then gl.
@@ -785,7 +789,7 @@ class VortexLauncher(QMainWindow):
             env["WGPU_BACKEND"] = backend
         # 'auto' → leave WGPU_BACKEND unset (runtime picks best available)
 
-        # ── GPU Power / Selection (Windows-safe) ────────────────────────────
+        # GPU power preference — hint to Windows which adapter to prefer
         power = self.cfg.get("render_power", "high")
         if power == "high":
             env["WGPU_POWER_PREF"] = "high"
@@ -797,7 +801,7 @@ class VortexLauncher(QMainWindow):
             env["WGPU_POWER_PREF"] = "low"
         # 'default' → leave unset
 
-        # ── Anti-Aliasing ────────────────────────────────────────────────────
+        # FXAA
         if self.cfg.get("render_antialiasing", True):
             env["WGPU_FXAA"] = "1"
         else:
@@ -814,7 +818,7 @@ class VortexLauncher(QMainWindow):
             self.move(e.globalPosition().toPoint() - self._drag_pos)
     def mouseReleaseEvent(self, _): self._drag_pos = None
 
-    # ── Build ─────────────────────────────────────────────────────────────────
+    # Builds the entire UI
     def _build(self):
         c = QWidget(self); self.setCentralWidget(c)
         self.bg = BgWidget(c); self.bg.setGeometry(0,0,780,600)
@@ -1655,7 +1659,7 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
         ]
         name_clean = name.lower().replace(" ", "").replace("-", "")
         
-        # Comic Sans için bilinen dosya adları
+        # Known filename variants for common fonts (e.g. Comic Sans has several files)
         aliases = [name_clean]
         if "comicsans" in name_clean:
             aliases.extend(["comic", "comicbd", "comici", "comicz"])
