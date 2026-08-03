@@ -27,7 +27,6 @@ launcher/dev_tools/
 
 # ── Unrelated projects ────────────────────────────────────────────────────────
 AccountSwitcher/
-images/
 
 # ── Windows / IDE ─────────────────────────────────────────────────────────────
 .vscode/

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/Vortexstrap-galaxy-text.png" alt="VortexStrap Banner" width="100%" />
+</p>
+
 # VortexStrap
 
 > An alternative launcher for [Vortex](https://playvortex.io/) — a community-made Roblox-inspired game.
@@ -78,3 +82,9 @@ VortexStrap is an **unofficial community tool** and is not affiliated with the V
 ## License
 
 MIT
+
+---
+
+<p align="center">
+  <img src="images/2026_07_26_0q2_Kleki.webp" alt="Meme" width="600" />
+</p>
