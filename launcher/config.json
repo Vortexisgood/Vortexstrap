@@ -1,0 +1,12 @@
+{
+  "accent": "#7C3AED",
+  "ui_font": "Segoe UI",
+  "patched_font": "Inter",
+  "is_patched": false,
+  "custom_cursor": "default",
+  "render_backend": "auto",
+  "render_power": "high",
+  "render_antialiasing": true,
+  "system_cursor": false,
+  "software_rendering": false
+}

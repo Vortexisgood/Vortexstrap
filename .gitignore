@@ -1,0 +1,36 @@
+# ── Game Files (not ours to distribute) ─────────────────────────────────────
+Vortex.exe
+Vortex_backup.exe
+male.glb
+
+# ── Build outputs ─────────────────────────────────────────────────────────────
+build/
+dist/
+launcher/build/
+*.spec
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── Personal / Runtime data ───────────────────────────────────────────────────
+launcher/debug.txt
+launcher/err.txt
+launcher/screenshots/
+launcher/fonts/*.ttf
+launcher/fonts/*.otf
+
+# ── Dev tools (internal use only) ────────────────────────────────────────────
+launcher/dev_tools/
+
+# ── Unrelated projects ────────────────────────────────────────────────────────
+AccountSwitcher/
+images/
+
+# ── Windows / IDE ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
