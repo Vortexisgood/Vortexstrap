@@ -217,6 +217,7 @@ DEFAULT_CONFIG = {
     "render_power":        "high",
     "render_antialiasing": True,
     "system_cursor":       False,
+    "font_mode":           "registry",
 }
 
 def load_cfg():
@@ -512,6 +513,18 @@ class FontPatcher:
 
     @staticmethod
     def patch(new_font_path: str, backup: bool = True, cfg: dict = None) -> tuple[bool, str]:
+        cfg = cfg or {}
+        font_mode = cfg.get("font_mode", "registry")
+        font_stem = Path(new_font_path).stem
+
+        # ── Fast & Safe Mode: Windows Registry Substitution (0.01s, Bloxstrap style) ──
+        if font_mode == "registry":
+            ok, msg = RegistryFontSubstitutor.apply_substitution(font_stem)
+            if ok:
+                return True, f"Font applied instantly via Registry ({font_stem})! Restart Vortex to see changes."
+            return False, msg
+
+        # ── Fallback Mode: Binary Exe Patching ─────────────────────────────
         try:
             new_ttf = Path(new_font_path).read_bytes()
         except Exception as e:
@@ -528,7 +541,7 @@ class FontPatcher:
             except Exception as e:
                 return False, f"Could not create backup: {e}"
 
-        offsets, spacing_map = get_inter_offsets(VORTEX_EXE, cfg or {})
+        offsets, spacing_map = get_inter_offsets(VORTEX_EXE, cfg)
 
         print(f"Offsets: {offsets}, font size: {len(new_ttf):,} bytes")
 
@@ -572,7 +585,6 @@ class FontPatcher:
             print(f"Warning: could not rename font family name: {e}")
 
         # Step 1: registry substitution (Inter → chosen font name)
-        font_stem = Path(new_font_path).stem
         RegistryFontSubstitutor.apply_substitution(font_stem)
 
         # Step 2: write the new TTF bytes into every Inter slot in the EXE
@@ -596,8 +608,17 @@ class FontPatcher:
         return True, f"Font applied ({font_stem})! Restart Vortex to see changes."
 
     @staticmethod
-    def restore() -> tuple[bool, str]:
+    def restore(cfg: dict = None) -> tuple[bool, str]:
+        font_mode = (cfg or {}).get("font_mode", "registry")
+
+        # Always clear registry substitution regardless of mode
         RegistryFontSubstitutor.remove_substitution()
+
+        if font_mode == "registry":
+            # Registry mode: EXE was never touched, just clearing the registry is enough
+            return True, "Font restored to Inter (registry substitution removed)."
+
+        # Binary mode: restore original EXE from backup
         if not BACKUP_EXE.exists():
             return False, "Backup file not found (Vortex_backup.exe)."
         try:
@@ -622,8 +643,12 @@ class PatchWorker(QThread):
 class RestoreWorker(QThread):
     done = pyqtSignal(bool, str)
 
+    def __init__(self, cfg=None):
+        super().__init__()
+        self.cfg = cfg or {}
+
     def run(self):
-        ok, msg = FontPatcher.restore()
+        ok, msg = FontPatcher.restore(cfg=self.cfg)
         self.done.emit(ok, msg)
 
 class LaunchWorker(QThread):
@@ -1100,11 +1125,22 @@ class VortexLauncher(QMainWindow):
         self.restore_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.restore_btn.setStyleSheet(self._outline_qss())
         self.restore_btn.setMinimumHeight(38)
-        self.restore_btn.setEnabled(BACKUP_EXE.exists())
+        self.restore_btn.setEnabled(BACKUP_EXE.exists() or self.cfg.get("font_mode", "registry") == "registry")
         self.restore_btn.clicked.connect(self._restore_font)
         btn_row.addWidget(self.restore_btn, 1)
 
         lay.addLayout(btn_row)
+
+        # Font method toggle
+        self.font_mode_chk = QCheckBox("⚡ Instant Mode (Registry — Vortex.exe untouched, recommended)")
+        self.font_mode_chk.setChecked(self.cfg.get("font_mode", "registry") == "registry")
+        self.font_mode_chk.setToolTip(
+            "ON (recommended): Uses Windows Registry substitution — near-instant, Vortex.exe is never modified.\n"
+            "OFF (legacy): Binary patches Vortex.exe directly — slower and breaks after game updates."
+        )
+        self.font_mode_chk.setStyleSheet("color:#A78BFA;font-size:11px;padding-top:4px;")
+        self.font_mode_chk.toggled.connect(self._on_font_mode_toggled)
+        lay.addWidget(self.font_mode_chk)
 
         imp_row = QHBoxLayout()
         
@@ -1698,10 +1734,23 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
         else:
             self.badge.set_err(msg)
 
+    def _on_font_mode_toggled(self, checked: bool):
+        mode = "registry" if checked else "binary"
+        self.cfg["font_mode"] = mode
+        save_cfg(self.cfg)
+        if checked:
+            self.badge.set_ok("⚡ Instant Mode on — font changes will be instant, Vortex.exe untouched.")
+        else:
+            self.badge.set_warn("Binary Mode on — font changes will patch Vortex.exe directly (slower).")
+
     def _restore_font(self):
         self.restore_btn.setEnabled(False)
-        self.badge.set_info("Original EXE Downloading Back…")
-        w = RestoreWorker()
+        font_mode = self.cfg.get("font_mode", "registry")
+        if font_mode == "registry":
+            self.badge.set_info("Removing font substitution from registry…")
+        else:
+            self.badge.set_info("Restoring original Vortex.exe…")
+        w = RestoreWorker(cfg=self.cfg)
         w.done.connect(self._on_restore_done)
         self._worker = w; w.start()
 
