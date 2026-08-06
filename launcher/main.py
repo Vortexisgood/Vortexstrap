@@ -1668,40 +1668,21 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
             )
             return
 
-        file_size = Path(ttf_path).stat().st_size
-        _, spacing_map = get_inter_offsets(VORTEX_EXE, self.cfg)
-        max_size = min(spacing_map.values()) if spacing_map else 407_065
-
-        if file_size > max_size:
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("Font File Size Exceeded")
-            msg_box.setText(
-                f"Selected font ({file_size / 1024:.1f} KB) exceeds the maximum supported capacity ({max_size / 1024:.1f} KB).\n\n"
-                "Would you like to compress (subset) the font while keeping Latin & English/Turkish characters?"
-            )
-            msg_box.setIcon(QMessageBox.Icon.Question)
-            yes_btn = msg_box.addButton("⚡ Yes, Compress & Apply", QMessageBox.ButtonRole.YesRole)
-            no_btn  = msg_box.addButton("✕ Cancel", QMessageBox.ButtonRole.NoRole)
-            msg_box.exec()
-
-            if msg_box.clickedButton() == yes_btn:
-                self.badge.set_info("Compressing font…")
-                compressed_path, c_msg = FontPatcher.subset_ttf(ttf_path)
-                if not compressed_path:
-                    self.badge.set_err(c_msg)
-                    return
-                ttf_path = compressed_path
-            else:
-                return
-
         self.apply_btn.setEnabled(False)
         self.apply_btn.setText("Applying…")
+
+        # If this is the first time after a Vortex update, the full binary scan
+        # runs inside PatchWorker (background thread) so the UI stays responsive.
         is_first_scan = not self.cfg.get("_inter_cache", {}).get("offsets")
-        self.badge.set_info("Scanning Vortex.exe for font…" if is_first_scan else "Updating EXE, please wait…")
+        if is_first_scan:
+            self.badge.set_info("First run after update — scanning Vortex.exe for fonts (may take a few seconds)…")
+        else:
+            self.badge.set_info("Patching font, please wait…")
 
         w = PatchWorker(ttf_path, cfg=self.cfg)
         w.done.connect(self._on_patch_done)
         self._worker = w; w.start()
+
 
     def _on_patch_done(self, ok, msg):
         self.apply_btn.setText("✓  Uygula")
