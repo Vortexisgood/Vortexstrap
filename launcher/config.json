@@ -1,7 +1,7 @@
 {
   "accent": "#7C3AED",
   "ui_font": "Segoe UI",
-  "patched_font": "Candara",
+  "patched_font": "⭐ Comic Sans MS",
   "is_patched": true,
   "custom_cursor": "system",
   "render_backend": "vulkan",
@@ -10,11 +10,25 @@
   "system_cursor": true,
   "font_mode": "registry",
   "_inter_cache": {
-    "exe_size": 157210112,
+    "exe_size": 100888576,
     "offsets": [
-      129851874,
-      131336150
-    ]
+      64763168,
+      66396813,
+      66803878,
+      67218961,
+      75310326,
+      75921509,
+      78576686
+    ],
+    "spacing": {
+      "64763168": 407054,
+      "66396813": 407054,
+      "66803878": 415070,
+      "67218961": 412846,
+      "75310326": 415070,
+      "75921509": 407054,
+      "78576686": 412846
+    }
   },
   "software_rendering": true
 }

@@ -214,6 +214,7 @@ DEFAULT_CONFIG = {
     "render_antialiasing": True,
     "system_cursor":       False,
     "font_mode":           "registry",
+    "fun_mode":            "none",
 }
 
 def load_cfg():
@@ -893,6 +894,25 @@ class VortexLauncher(QMainWindow):
         else:
             env["WGPU_FXAA"] = "0"
 
+        # ── Fun & Retro Modes ────────────────────────────────────────────────
+        fun_mode = self.cfg.get("fun_mode", "none")
+        if fun_mode == "retro_240p":
+            env["WGPU_SCALE_FACTOR"]   = "0.3"
+            env["WGPU_FXAA"]           = "0"
+            env["WGPU_TEXTURE_FILTER"] = "nearest"
+        elif fun_mode == "arcade_8bit":
+            env["WGPU_SCALE_FACTOR"]   = "0.2"
+            env["WGPU_FXAA"]           = "0"
+            env["WGPU_TEXTURE_FILTER"] = "nearest"
+            env["WGPU_POWER_PREF"]     = "low"
+        elif fun_mode == "crt_vintage":
+            env["WGPU_SCALE_FACTOR"]   = "0.4"
+            env["WGPU_FXAA"]           = "0"
+        elif fun_mode == "speedrunner":
+            env["WGPU_SCALE_FACTOR"]   = "0.5"
+            env["WGPU_FXAA"]           = "0"
+            env["WGPU_POWER_PREF"]     = "high"
+
         return env, extra_args
 
     # drag
@@ -1182,6 +1202,27 @@ class VortexLauncher(QMainWindow):
         self.backend_combo.setStyleSheet(combo_qss)
         lay.addWidget(self.backend_combo)
 
+        # 1b. Fun & Retro Modes Combo
+        lay.addWidget(QLabel("🕹️  Fun & Retro Modes (Graphics Effects):"))
+        self.fun_combo = QComboBox()
+        fun_modes = [
+            ("none",         "Off (Standard Modern Resolution)"),
+            ("retro_240p",   "🕹️  Retro Pixelated 240p (PS1 / N64 Nostalgia)"),
+            ("arcade_8bit",   "👾  8-Bit Arcade Mode (Low-Res + Pixel Textures)"),
+            ("crt_vintage",   "📺  CRT Vintage Display (Low-Poly Filter)"),
+            ("speedrunner",   "⚡  Potato PC / Speedrunner Mode (Ultra Performance)"),
+        ]
+        for key, name in fun_modes:
+            self.fun_combo.addItem(name, key)
+
+        cur_fun = self.cfg.get("fun_mode", "none")
+        for idx in range(self.fun_combo.count()):
+            if self.fun_combo.itemData(idx) == cur_fun:
+                self.fun_combo.setCurrentIndex(idx)
+
+        self.fun_combo.setStyleSheet(combo_qss)
+        lay.addWidget(self.fun_combo)
+
         # Crash tip note
         crash_note = QLabel(
             "⚠️  If the game crashes on launch: try DX11 first, then Vulkan.\n"
@@ -1238,6 +1279,7 @@ class VortexLauncher(QMainWindow):
 
     def _save_render_settings(self):
         self.cfg["render_backend"]      = self.backend_combo.currentData()
+        self.cfg["fun_mode"]            = self.fun_combo.currentData()
         self.cfg["render_power"]        = self.power_combo.currentData()
         self.cfg["render_antialiasing"] = self.aa_cb.isChecked()
         self.cfg["software_rendering"]   = self.software_rendering_cb.isChecked()
