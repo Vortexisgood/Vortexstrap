@@ -1,13 +1,14 @@
 {
   "accent": "#7C3AED",
   "ui_font": "Segoe UI",
-  "patched_font": "⭐ Comic Sans MS",
+  "patched_font": "Candara",
   "is_patched": true,
   "custom_cursor": "system",
-  "render_backend": "auto",
+  "render_backend": "vulkan",
   "render_power": "high",
   "render_antialiasing": true,
   "system_cursor": true,
+  "font_mode": "registry",
   "_inter_cache": {
     "exe_size": 157210112,
     "offsets": [
@@ -15,5 +16,5 @@
       131336150
     ]
   },
-  "software_rendering": false
+  "software_rendering": true
 }
