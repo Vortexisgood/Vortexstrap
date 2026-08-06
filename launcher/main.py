@@ -53,59 +53,156 @@ GIF_CURSOR      = CURSORS_DIR / "cursor.gif"
 FONTS_DIR.mkdir(exist_ok=True)
 SCREENSHOTS_DIR.mkdir(exist_ok=True)
 
-# Known Inter font locations inside Vortex.exe, with the byte size of each slot.
-# These were found by scanning the binary; should still work across minor game updates.
-INTER_OFFSET_SPACING: dict[int, int] = {
-    65_337_752:  407_054,   # Inter Regular 1
-    68_228_285:  407_054,   # Inter Regular 2
-    68_635_350:  415_070,   # Inter Bold 1
-    69_050_433:  412_846,   # Inter Italic 1
-    129_851_874: 415_070,   # Inter Bold 2
-    131_336_150: 407_054,   # Inter Regular 3
-    133_989_375: 412_846,   # Inter Italic 2
-}
+# Fallback slot size if we can't calculate the real TTF size.
+# 407 KB is a safe lower bound based on observed Inter font sizes in Vortex.
+_FALLBACK_SLOT_SIZE = 407_054
 
-def _find_inter_offsets_in_exe(exe_path: Path) -> list[int]:
+
+def _read_ttf_name(data: bytes, offset: int) -> str:
     """
-    Scans Vortex.exe for embedded Inter font TTF blobs.
-    Tries the known offsets first; falls back to returning all known positions.
+    Reads the font family name (nameID 1) from a TTF/OTF blob at the given offset.
+    Returns an empty string if reading fails.
     """
     try:
-        data = exe_path.read_bytes()
+        num_tables = struct.unpack_from('>H', data, offset + 4)[0]
+        # Walk the table directory to find the 'name' table
+        for i in range(num_tables):
+            tbl_base  = offset + 12 + i * 16
+            tag       = data[tbl_base:tbl_base + 4]
+            tbl_off   = struct.unpack_from('>I', data, tbl_base + 8)[0]
+            tbl_len   = struct.unpack_from('>I', data, tbl_base + 12)[0]
+            if tag == b'name':
+                abs_off = offset + tbl_off
+                count   = struct.unpack_from('>H', data, abs_off + 2)[0]
+                str_off = struct.unpack_from('>H', data, abs_off + 4)[0]
+                for j in range(count):
+                    rec = abs_off + 6 + j * 12
+                    name_id  = struct.unpack_from('>H', data, rec + 6)[0]
+                    length   = struct.unpack_from('>H', data, rec + 8)[0]
+                    str_pos  = struct.unpack_from('>H', data, rec + 10)[0]
+                    if name_id == 1:  # Font Family name
+                        raw = data[abs_off + str_off + str_pos:
+                                   abs_off + str_off + str_pos + length]
+                        try:
+                            return raw.decode('utf-16-be').strip()
+                        except Exception:
+                            try:
+                                return raw.decode('ascii').strip()
+                            except Exception:
+                                pass
     except Exception:
-        return []
+        pass
+    return ""
 
-    # Check each known offset and verify the TTF header bytes
-    CONFIRMED_OFFSETS = sorted(INTER_OFFSET_SPACING.keys())
 
-    verified = []
-    for off in CONFIRMED_OFFSETS:
-        if off < len(data) - 4:
-            hdr = data[off:off+4]
-            if hdr in (b'\x00\x01\x00\x00', b'OTTO'):
-                verified.append(off)
-            elif hdr == b'\x00\x00\x00\x00':
-                # Slot was already patched (zeroed out), still include it
-                verified.append(off)
+def _calc_ttf_slot_size(data: bytes, offset: int) -> int:
+    """
+    Calculates the actual byte footprint of a TTF blob by finding the end
+    of its last table. Falls back to _FALLBACK_SLOT_SIZE on any error.
+    """
+    try:
+        num_tables = struct.unpack_from('>H', data, offset + 4)[0]
+        last_end = 0
+        for i in range(num_tables):
+            tbl_base  = offset + 12 + i * 16
+            tbl_start = struct.unpack_from('>I', data, tbl_base + 8)[0]
+            tbl_len   = struct.unpack_from('>I', data, tbl_base + 12)[0]
+            end = tbl_start + tbl_len
+            if end > last_end:
+                last_end = end
+        # Round up to nearest 4 bytes for alignment, add a small safety margin
+        size = last_end + (4 - last_end % 4) % 4
+        return size if size > 0 else _FALLBACK_SLOT_SIZE
+    except Exception:
+        return _FALLBACK_SLOT_SIZE
 
-    return sorted(verified) if verified else CONFIRMED_OFFSETS
+
+def _full_dynamic_scan(data: bytes) -> dict[int, int]:
+    """
+    Scans the entire binary for TTF/OTF magic bytes and returns a dict of
+    {offset: slot_size} for every blob whose family name contains 'inter'.
+
+    This makes font patching update-proof: no hardcoded offsets needed.
+    """
+    TTF_MAGIC = b'\x00\x01\x00\x00'
+    OTF_MAGIC = b'OTTO'
+    found: dict[int, int] = {}
+    search_start = 0
+
+    while True:
+        # Find next TTF or OTF header
+        ttf_pos = data.find(TTF_MAGIC, search_start)
+        otf_pos = data.find(OTF_MAGIC, search_start)
+
+        # Pick whichever comes first
+        if ttf_pos == -1 and otf_pos == -1:
+            break
+        if ttf_pos == -1:
+            pos = otf_pos
+        elif otf_pos == -1:
+            pos = ttf_pos
+        else:
+            pos = min(ttf_pos, otf_pos)
+
+        # Quick sanity check: num_tables should be reasonable (4-30)
+        try:
+            num_tables = struct.unpack_from('>H', data, pos + 4)[0]
+            if 3 < num_tables < 40:
+                family = _read_ttf_name(data, pos)
+                if 'inter' in family.lower():
+                    slot = _calc_ttf_slot_size(data, pos)
+                    found[pos] = slot
+                    print(f"Found Inter font at offset {pos:,} ('{family}', slot {slot:,} bytes)")
+        except Exception:
+            pass
+
+        search_start = pos + 4
+
+    return found
 
 
 def get_inter_offsets(exe_path: Path, cfg: dict) -> tuple[list[int], dict[int, int]]:
     """
-    Returns: (offsets_list, spacing_per_offset_dict)
+    Returns (offsets_list, spacing_map) for all Inter font blobs in Vortex.exe.
+
+    Results are cached in config by exe file size.  On any Vortex update the
+    exe size changes, the cache is invalidated, and a fresh full scan runs
+    automatically — so no manual offset updates are ever needed.
     """
-    exe_size = exe_path.stat().st_size if exe_path.exists() else 0
+    if not exe_path.exists():
+        return [], {}
+
+    exe_size = exe_path.stat().st_size
     cached   = cfg.get("_inter_cache", {})
 
-    if cached.get("exe_size") == exe_size and cached.get("offsets"):
-        offsets = cached["offsets"]
-    else:
-        offsets = _find_inter_offsets_in_exe(exe_path)
-        cfg["_inter_cache"] = {"exe_size": exe_size, "offsets": offsets}
-        save_cfg(cfg)
+    if cached.get("exe_size") == exe_size and cached.get("offsets") and cached.get("spacing"):
+        offsets      = cached["offsets"]
+        spacing_map  = {int(k): v for k, v in cached["spacing"].items()}
+        return offsets, spacing_map
 
-    return offsets, INTER_OFFSET_SPACING
+    # Cache miss or stale — run the full dynamic scan
+    print(f"Vortex.exe changed (size={exe_size:,}). Running full Inter font scan...")
+    try:
+        data = exe_path.read_bytes()
+    except Exception as e:
+        print(f"Could not read Vortex.exe: {e}")
+        return [], {}
+
+    spacing_map = _full_dynamic_scan(data)
+
+    if not spacing_map:
+        print("WARNING: No Inter font blobs found. EXE may be packed or format changed.")
+        return [], {}
+
+    offsets = sorted(spacing_map.keys())
+    cfg["_inter_cache"] = {
+        "exe_size": exe_size,
+        "offsets":  offsets,
+        "spacing":  {str(k): v for k, v in spacing_map.items()},
+    }
+    save_cfg(cfg)
+    print(f"Scan complete: found {len(offsets)} Inter font slot(s).")
+    return offsets, spacing_map
 
 
 
@@ -340,21 +437,7 @@ class GifCursorAnimator(QTimer):
             QApplication.restoreOverrideCursor()
 
 
-# Calculates the actual byte size of a TTF blob by reading its table directory
-def get_ttf_size(data: bytes, offset: int) -> int:
-    try:
-        num_tables = struct.unpack_from('>H', data, offset + 4)[0]
-        last_end = 0
-        for i in range(num_tables):
-            tbl_offset = offset + 12 + i * 16
-            tbl_start  = struct.unpack_from('>I', data, tbl_offset + 8)[0]
-            tbl_len    = struct.unpack_from('>I', data, tbl_offset + 12)[0]
-            end = tbl_start + tbl_len
-            if end > last_end:
-                last_end = end
-        return last_end if last_end > 0 else INTER_TTF_SPACING
-    except:
-        return INTER_TTF_SPACING
+
 
 # Adds/removes an Inter → custom font substitution in the Windows registry.
 # This makes any app that asks for 'Inter' use the chosen font instead.
