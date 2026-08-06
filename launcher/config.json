@@ -4,11 +4,12 @@
   "patched_font": "⭐ Comic Sans MS",
   "is_patched": true,
   "custom_cursor": "system",
-  "render_backend": "vulkan",
+  "render_backend": "auto",
   "render_power": "high",
   "render_antialiasing": true,
   "system_cursor": true,
   "font_mode": "registry",
+  "fun_mode": "retro_240p",
   "_inter_cache": {
     "exe_size": 100888576,
     "offsets": [

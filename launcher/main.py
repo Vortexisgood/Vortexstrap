@@ -897,21 +897,18 @@ class VortexLauncher(QMainWindow):
         # ── Fun & Retro Modes ────────────────────────────────────────────────
         fun_mode = self.cfg.get("fun_mode", "none")
         if fun_mode == "retro_240p":
-            env["WGPU_SCALE_FACTOR"]   = "0.3"
-            env["WGPU_FXAA"]           = "0"
-            env["WGPU_TEXTURE_FILTER"] = "nearest"
+            env["WGPU_SCALE_FACTOR"] = "0.3"
+            env["WGPU_FXAA"]         = "0"
         elif fun_mode == "arcade_8bit":
-            env["WGPU_SCALE_FACTOR"]   = "0.2"
-            env["WGPU_FXAA"]           = "0"
-            env["WGPU_TEXTURE_FILTER"] = "nearest"
-            env["WGPU_POWER_PREF"]     = "low"
+            env["WGPU_SCALE_FACTOR"] = "0.2"
+            env["WGPU_FXAA"]         = "0"
         elif fun_mode == "crt_vintage":
-            env["WGPU_SCALE_FACTOR"]   = "0.4"
-            env["WGPU_FXAA"]           = "0"
+            env["WGPU_SCALE_FACTOR"] = "0.4"
+            env["WGPU_FXAA"]         = "0"
         elif fun_mode == "speedrunner":
-            env["WGPU_SCALE_FACTOR"]   = "0.5"
-            env["WGPU_FXAA"]           = "0"
-            env["WGPU_POWER_PREF"]     = "high"
+            env["WGPU_SCALE_FACTOR"] = "0.5"
+            env["WGPU_FXAA"]         = "0"
+            env["WGPU_POWER_PREF"]   = "high"
 
         return env, extra_args
 
