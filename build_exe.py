@@ -54,7 +54,7 @@ def build():
         
         # Gerekli kaynak klasörlerini dist içine kopyala
         import shutil
-        for folder_name in ["Mouseİmleci", "fonts", "screenshots"]:
+        for folder_name in ["Mouseİmleci", "fonts", "screenshots", "images"]:
             src_folder = BASE_DIR / "launcher" / folder_name
             if not src_folder.exists():
                 src_folder = BASE_DIR / folder_name
@@ -65,6 +65,13 @@ def build():
                     shutil.rmtree(dst_folder)
                 shutil.copytree(src_folder, dst_folder)
                 print(f"Copied resource folder: {folder_name}")
+
+        logo_src = BASE_DIR / "images" / "Vortex_logo9.webp"
+        if not logo_src.exists():
+            logo_src = BASE_DIR / "launcher" / "Vortex_logo9.webp"
+        if logo_src.exists():
+            shutil.copy2(logo_src, dist_dir / "Vortex_logo9.webp")
+            print("Copied Vortex_logo9.webp to dist")
 
         print("\n=======================================================")
         print("SUCCESS! VortexStrap.exe has been created inside:")

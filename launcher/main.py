@@ -177,8 +177,10 @@ def _full_dynamic_scan(data: bytes) -> dict[int, int]:
                                 struct.unpack_from('>I', data, cand_off + 12 + t * 16 + 12)[0]
                                 for t in range(num_tables)
                             )
-                            found[cand_off] = last_end
-                            print(f"Found Inter TTF at offset {cand_off:,} (slot {last_end:,} bytes)")
+                            # Ensure slot capacity is at least _FALLBACK_SLOT_SIZE (407,054 bytes)
+                            slot_cap = max(last_end, _FALLBACK_SLOT_SIZE)
+                            found[cand_off] = slot_cap
+                            print(f"Found Inter TTF at offset {cand_off:,} (slot {slot_cap:,} bytes)")
                 except Exception:
                     pass
     return found
@@ -579,12 +581,24 @@ class FontPatcher:
                 "The EXE may have changed — please report this issue."
             )
 
-        # Make sure the font fits in the smallest available slot
-        min_spacing = min(spacing_map.get(off, 407_065) for off in offsets)
+        # Make sure the font fits in the smallest available slot (enforce at least _FALLBACK_SLOT_SIZE)
+        min_spacing = max(min(spacing_map.get(off, _FALLBACK_SLOT_SIZE) for off in offsets), _FALLBACK_SLOT_SIZE)
+        if len(new_ttf) > min_spacing:
+            print(f"Font size ({len(new_ttf):,} bytes) > slot size ({min_spacing:,} bytes). Attempting automatic compression…")
+            compressed_path, c_msg = FontPatcher.subset_ttf(new_font_path)
+            if compressed_path and Path(compressed_path).exists():
+                try:
+                    c_bytes = Path(compressed_path).read_bytes()
+                    if len(c_bytes) <= min_spacing:
+                        new_ttf = c_bytes
+                        print(f"Font compressed successfully from {len(Path(new_font_path).read_bytes()):,} -> {len(new_ttf):,} bytes!")
+                except Exception:
+                    pass
+
         if len(new_ttf) > min_spacing:
             print(f"Font too large: {len(new_ttf)} bytes, slot is {min_spacing} bytes")
             return False, (
-                f"Selected font ({len(new_ttf):,} bytes) exceeds the slot size "
+                f"Selected font ({len(new_ttf):,} bytes) exceeds the slot capacity "
                 f"({min_spacing:,} bytes).\nPlease select a smaller font."
             )
 
