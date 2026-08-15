@@ -22,7 +22,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QPoint, QSize, QUrl
 from PyQt6.QtGui import (
     QFont, QFontDatabase, QPainter, QColor, QLinearGradient,
     QPen, QCursor, QMouseEvent, QPainterPath, QPixmap, QBrush, QDesktopServices,
-    QGuiApplication, QShortcut, QKeySequence, QMovie, QImage
+    QGuiApplication, QShortcut, QKeySequence, QMovie, QImage, QIcon
 )
 
 # Platform detection
@@ -2019,14 +2019,47 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
                             return str(f)
         return None
 
+def find_icon_file() -> Path | None:
+    candidates = [
+        BASE_DIR / "vortexstraplogo.ico",
+        BASE_DIR / "vortexstraplogo.png",
+        BASE_DIR / "images" / "vortexstraplogo.png",
+        BASE_DIR.parent / "vortexstraplogo.ico",
+        BASE_DIR.parent / "vortexstraplogo.png",
+        Path(__file__).parent / "vortexstraplogo.ico",
+        Path(__file__).parent / "vortexstraplogo.png",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p.resolve()
+    return None
+
+
 # ── Entry ─────────────────────────────────────────────────────────────────────
 def main():
+    if IS_WINDOWS:
+        try:
+            # Explicit AppUserModelID ensures Windows Taskbar uses our custom icon instead of generic window
+            myappid = "vortexisgood.vortexstrap.launcher.1.1"
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception:
+            pass
+
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
     app.setApplicationName("VortexStrap")
+
+    icon_file = find_icon_file()
+    if icon_file and icon_file.exists():
+        app_icon = QIcon(str(icon_file))
+        app.setWindowIcon(app_icon)
+
     win = VortexLauncher()
     win.setWindowTitle("VortexStrap")
+    if icon_file and icon_file.exists():
+        win.setWindowIcon(QIcon(str(icon_file)))
+
     win.show()
     sys.exit(app.exec())
 
