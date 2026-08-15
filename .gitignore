@@ -18,7 +18,10 @@ __pycache__/
 # ── Personal / Runtime data ───────────────────────────────────────────────────
 launcher/debug.txt
 launcher/err.txt
+screenshots/
 launcher/screenshots/
+fonts/*.ttf
+fonts/*.otf
 launcher/fonts/*.ttf
 launcher/fonts/*.otf
 
