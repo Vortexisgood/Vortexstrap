@@ -1153,8 +1153,27 @@ class VortexLauncher(QMainWindow):
         acc = self.cfg.get("accent","#7C3AED")
         bar = QHBoxLayout(); bar.setContentsMargins(4,0,4,0)
 
-        logo = QLabel("⚡ VortexStrap")
-        logo.setStyleSheet(f"color:{acc};font-size:17px;font-weight:800;letter-spacing:1px;")
+        logo = QLabel()
+        galaxy_logo = None
+        for p in [
+            BASE_DIR / "images" / "Vortexstrap-galaxy-text.png",
+            BASE_DIR / "Vortexstrap-galaxy-text.png",
+            BASE_DIR.parent / "images" / "Vortexstrap-galaxy-text.png",
+        ]:
+            if p.exists():
+                galaxy_logo = p
+                break
+
+        if galaxy_logo:
+            pix = QPixmap(str(galaxy_logo))
+            if not pix.isNull():
+                logo.setPixmap(pix.scaledToHeight(26, Qt.TransformationMode.SmoothTransformation))
+                logo.setStyleSheet("border: none; background: transparent;")
+
+        if logo.pixmap() is None or logo.pixmap().isNull():
+            logo.setText("⚡ VortexStrap")
+            logo.setStyleSheet(f"color:{acc};font-size:17px;font-weight:800;letter-spacing:1px;")
+
         bar.addWidget(logo); bar.addStretch()
 
         for sym, tip, fn in [("—","Minimize",self.showMinimized),("✕","Close",self.close)]:
