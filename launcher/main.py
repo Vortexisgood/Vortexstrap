@@ -25,10 +25,28 @@ from PyQt6.QtGui import (
     QGuiApplication, QShortcut, QKeySequence, QMovie, QImage
 )
 
-# Paths and Vortex.exe detection
+# Platform detection
+IS_WINDOWS = sys.platform == "win32"
+IS_MACOS   = sys.platform == "darwin"
+IS_LINUX   = sys.platform.startswith("linux")
+
+# Paths and Vortex executable detection
 BASE_DIR = Path(sys.argv[0]).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
 
 def find_vortex_exe() -> Path:
+    if IS_MACOS:
+        candidates = [
+            BASE_DIR / "Vortex.app" / "Contents" / "MacOS" / "Vortex",
+            BASE_DIR / "Vortex.app",
+            BASE_DIR / "Vortex",
+            Path("/Applications/Vortex.app/Contents/MacOS/Vortex"),
+            Path.home() / "Applications" / "Vortex.app" / "Contents" / "MacOS" / "Vortex",
+        ]
+        for p in candidates:
+            if p.exists():
+                return p.resolve()
+        return BASE_DIR / "Vortex"
+
     candidates = [
         BASE_DIR / "Vortex.exe",
         BASE_DIR.parent / "Vortex.exe",
@@ -41,14 +59,28 @@ def find_vortex_exe() -> Path:
             return p.resolve()
     return BASE_DIR / "Vortex.exe"
 
+def find_logo_webp() -> Path | None:
+    candidates = [
+        BASE_DIR / "Vortex_logo9.webp",
+        BASE_DIR / "images" / "Vortex_logo9.webp",
+        BASE_DIR.parent / "images" / "Vortex_logo9.webp",
+        Path(__file__).parent / "Vortex_logo9.webp",
+        Path(__file__).parent / "images" / "Vortex_logo9.webp",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p.resolve()
+    return None
+
 VORTEX_EXE      = find_vortex_exe()
 ROOT_DIR        = VORTEX_EXE.parent if VORTEX_EXE.exists() else BASE_DIR
-BACKUP_EXE      = ROOT_DIR / "Vortex_backup.exe"
+BACKUP_EXE      = ROOT_DIR / ("Vortex_backup" if IS_MACOS else "Vortex_backup.exe")
 CONFIG_FILE     = BASE_DIR / "config.json"
 FONTS_DIR       = BASE_DIR / "fonts"
 SCREENSHOTS_DIR = BASE_DIR / "screenshots"
 CURSORS_DIR     = BASE_DIR / "Mouseİmleci"
 GIF_CURSOR      = CURSORS_DIR / "cursor.gif"
+LOGO_WEBP       = find_logo_webp()
 
 FONTS_DIR.mkdir(exist_ok=True)
 SCREENSHOTS_DIR.mkdir(exist_ok=True)
@@ -233,6 +265,8 @@ class GlobalHotkeyThread(QThread):
     triggered = pyqtSignal()
 
     def run(self):
+        if not IS_WINDOWS:
+            return  # Skip Windows-specific OS hotkeys on macOS/Linux
         user32 = ctypes.windll.user32
         VK_F12      = 0x7B   # F12
         VK_SNAPSHOT = 0x2C   # PrtScn
@@ -329,6 +363,8 @@ def create_custom_cursor(cursor_type: str, accent: str = "#7C3AED") -> QCursor:
 
 # Converts a QPixmap to a Windows HCURSOR for system-wide cursor replacement
 def _pixmap_to_hcursor(pixmap: QPixmap, hotspot_x: int = 0, hotspot_y: int = 0):
+    if not IS_WINDOWS:
+        return None
     size = 32
     scaled = pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
                            Qt.TransformationMode.SmoothTransformation)
@@ -384,7 +420,7 @@ def _restore_system_cursor():
 class GifCursorAnimator(QTimer):
     def __init__(self, gif_path: Path, system_wide: bool = False, parent=None):
         super().__init__(parent)
-        self._system_wide = system_wide
+        self._system_wide = system_wide and IS_WINDOWS
         self._frames: list[QPixmap] = []
         self._idx = 0
 
@@ -419,7 +455,7 @@ class GifCursorAnimator(QTimer):
         QApplication.setOverrideCursor(QCursor(pix, 0, 0))
 
         # If system-wide mode is on, also push the cursor to the Windows system
-        if self._system_wide:
+        if self._system_wide and IS_WINDOWS:
             try:
                 hc = _pixmap_to_hcursor(pix, 0, 0)
                 if hc:
@@ -429,7 +465,7 @@ class GifCursorAnimator(QTimer):
 
     def stop_and_restore(self):
         self.stop()
-        if self._system_wide:
+        if self._system_wide and IS_WINDOWS:
             _restore_system_cursor()
         else:
             QApplication.restoreOverrideCursor()
@@ -442,6 +478,8 @@ class GifCursorAnimator(QTimer):
 class RegistryFontSubstitutor:
     @staticmethod
     def apply_substitution(target_font_name: str) -> tuple[bool, str]:
+        if not IS_WINDOWS:
+            return False, "Registry substitution is only supported on Windows."
         try:
             import winreg
             key_path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontSubstitutes"
@@ -459,6 +497,8 @@ class RegistryFontSubstitutor:
 
     @staticmethod
     def remove_substitution() -> tuple[bool, str]:
+        if not IS_WINDOWS:
+            return True, "Registry cleanup skipped on non-Windows OS."
         try:
             import winreg
             key_path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontSubstitutes"
@@ -653,6 +693,126 @@ class LaunchWorker(QThread):
             self.finished_sig.emit()
         except Exception as e:
             self.error_sig.emit(str(e))
+
+
+# Bloxstrap-style compact launch splash screen
+class LaunchSplashDialog(QDialog):
+    """
+    Compact, centered launcher splash dialog.
+    Displays logo (Vortex_logo9.webp), 'Launching Vortex...', a sleek progress bar,
+    credits ('Logo: music.mash'), and a Cancel button.
+    """
+    def __init__(self, parent=None, on_cancel=None):
+        super().__init__(parent)
+        self.on_cancel_cb = on_cancel
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Dialog
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedSize(380, 190)
+
+        # Center on primary screen
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            geo = screen.geometry()
+            self.move(geo.center().x() - 190, geo.center().y() - 95)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        card = QFrame(self)
+        card.setStyleSheet("""
+            QFrame {
+                background: #120E24;
+                border: 1px solid rgba(124, 58, 237, 0.45);
+                border-radius: 14px;
+            }
+        """)
+        c_lay = QVBoxLayout(card)
+        c_lay.setContentsMargins(18, 16, 18, 12)
+        c_lay.setSpacing(8)
+
+        # 1. Top Logo (Vortex_logo9.webp)
+        logo_lbl = QLabel()
+        logo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo_lbl.setStyleSheet("border: none; background: transparent;")
+        if LOGO_WEBP and LOGO_WEBP.exists():
+            pix = QPixmap(str(LOGO_WEBP))
+            if not pix.isNull():
+                logo_lbl.setPixmap(pix.scaled(52, 52, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        if logo_lbl.pixmap() is None or logo_lbl.pixmap().isNull():
+            logo_lbl.setText("⚡")
+            logo_lbl.setStyleSheet("font-size: 32px; color: #A78BFA; border: none; background: transparent;")
+        c_lay.addWidget(logo_lbl)
+
+        # 2. Status Label
+        self.status_lbl = QLabel("Launching Vortex…")
+        self.status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_lbl.setStyleSheet("color: #E2D9FF; font-size: 13px; font-weight: 600; border: none; background: transparent;")
+        c_lay.addWidget(self.status_lbl)
+
+        # 3. Progress Bar
+        self.prog = QProgressBar()
+        self.prog.setRange(0, 0)  # Indeterminate pulsing animation
+        self.prog.setFixedHeight(5)
+        self.prog.setTextVisible(False)
+        self.prog.setStyleSheet("""
+            QProgressBar {
+                background: rgba(255, 255, 255, 0.08);
+                border: none;
+                border-radius: 2px;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7C3AED, stop:1 #A78BFA);
+                border-radius: 2px;
+            }
+        """)
+        c_lay.addWidget(self.prog)
+
+        c_lay.addSpacing(2)
+
+        # 4. Footer row: Credits + Cancel
+        foot = QHBoxLayout()
+        foot.setContentsMargins(0, 0, 0, 0)
+
+        cred = QLabel("Logo: music.mash")
+        cred.setStyleSheet("color: #7A6A9F; font-size: 10px; border: none; background: transparent;")
+        foot.addWidget(cred)
+
+        foot.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        cancel_btn.setFixedSize(65, 22)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.07);
+                color: #B8B0D0;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 5px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background: rgba(239, 68, 68, 0.25);
+                color: #F87171;
+                border-color: rgba(239, 68, 68, 0.5);
+            }
+        """)
+        cancel_btn.clicked.connect(self._on_cancel)
+        foot.addWidget(cancel_btn)
+
+        c_lay.addLayout(foot)
+        lay.addWidget(card)
+
+    def set_status(self, text: str):
+        self.status_lbl.setText(text)
+
+    def _on_cancel(self):
+        if self.on_cancel_cb:
+            self.on_cancel_cb()
+        self.reject()
 
 # Animated particle background widget
 class BgWidget(QWidget):
@@ -1612,28 +1772,61 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
         if not VORTEX_EXE.exists():
             self._locate_vortex()
             if not VORTEX_EXE.exists():
-                self.badge.set_err("Vortex.exe not found! Please locate it manually.")
+                self.badge.set_err("Vortex binary not found! Please locate it manually.")
                 return
 
         self.launch_btn.setEnabled(False)
         self.launch_btn.setText("Launching…")
         self.prog.show()
 
+        # Open Bloxstrap-style splash dialog (centered on screen)
+        self._splash_dialog = LaunchSplashDialog(self, on_cancel=self._cancel_launch)
+        self._splash_dialog.show()
+
         render_env, extra_args = self._get_render_env()
-        backend_label = self.cfg.get('render_backend', 'auto').upper()
         w = LaunchWorker(render_env=render_env, extra_args=extra_args)
-        w.started_sig.connect(lambda: (self.badge.set_ok(f"Vortex is running! ({backend_label} Engine) | Press F12 for Screenshots"),
-                                       self.prog.hide(),
-                                       self.launch_btn.setText("🟢  Running")))
+        w.started_sig.connect(self._on_game_started)
         w.finished_code_sig.connect(self._on_game_exit)
-        w.finished_sig.connect(lambda: (
-            self.launch_btn.setText("▶   Launch Vortex"),
-            self.launch_btn.setEnabled(True)))
-        w.error_sig.connect(lambda msg: (self.badge.set_err(f"Launch error: {msg}"),
-                                          self.prog.hide(),
-                                          self.launch_btn.setText("▶   Launch Vortex"),
-                                          self.launch_btn.setEnabled(True)))
-        self._worker = w; w.start()
+        w.finished_sig.connect(self._on_game_finished)
+        w.error_sig.connect(self._on_game_error)
+
+        self._worker = w
+        w.start()
+
+    def _on_game_started(self):
+        backend_label = self.cfg.get('render_backend', 'auto').upper()
+        self.badge.set_ok(f"Vortex is running! ({backend_label} Engine) | Press F12 for Screenshots")
+        self.prog.hide()
+        self.launch_btn.setText("🟢  Running")
+
+        if hasattr(self, '_splash_dialog') and self._splash_dialog:
+            self._splash_dialog.set_status("Vortex is running!")
+            QTimer.singleShot(1000, self._close_splash)
+
+    def _close_splash(self):
+        if hasattr(self, '_splash_dialog') and self._splash_dialog:
+            self._splash_dialog.accept()
+            self._splash_dialog = None
+
+    def _cancel_launch(self):
+        if hasattr(self, '_worker') and self._worker and self._worker.isRunning():
+            self._worker.terminate()
+            self.badge.set_info("Launch cancelled.")
+            self.prog.hide()
+            self.launch_btn.setText("▶   Launch Vortex")
+            self.launch_btn.setEnabled(True)
+
+    def _on_game_finished(self):
+        self.launch_btn.setText("▶   Launch Vortex")
+        self.launch_btn.setEnabled(True)
+        self._close_splash()
+
+    def _on_game_error(self, msg: str):
+        self.badge.set_err(f"Launch error: {msg}")
+        self.prog.hide()
+        self.launch_btn.setText("▶   Launch Vortex")
+        self.launch_btn.setEnabled(True)
+        self._close_splash()
 
     def _on_game_exit(self, return_code: int):
         """Handle Vortex.exe exit — show crash hints if it exited with non-zero code."""
