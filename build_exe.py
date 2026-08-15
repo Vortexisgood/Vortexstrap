@@ -73,6 +73,12 @@ def build():
             shutil.copy2(logo_src, dist_dir / "Vortex_logo9.webp")
             print("Copied Vortex_logo9.webp to dist")
 
+        # Copy icon files to dist
+        for icon_f in [PNG_ICON, ICO_ICON]:
+            if icon_f.exists():
+                shutil.copy2(icon_f, dist_dir / icon_f.name)
+                print(f"Copied {icon_f.name} to dist")
+
         print("\n=======================================================")
         print("SUCCESS! VortexStrap.exe has been created inside:")
         print(f" -> {dist_dir / 'VortexStrap.exe'}")
