@@ -54,7 +54,7 @@ def build():
         
         # Gerekli kaynak klasörlerini dist içine kopyala
         import shutil
-        for folder_name in ["Mouseİmleci", "fonts", "screenshots", "images"]:
+        for folder_name in ["Mouseİmleci", "fonts", "screenshots", "images", "chat_bubbles"]:
             src_folder = BASE_DIR / "launcher" / folder_name
             if not src_folder.exists():
                 src_folder = BASE_DIR / folder_name

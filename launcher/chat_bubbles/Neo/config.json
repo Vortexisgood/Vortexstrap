@@ -1,0 +1,9 @@
+{
+  "name": "Neo Dark",
+  "author": "YourName",
+  "text_color": "#FFFFFF",
+  "username_color": "#A78BFA",
+  "background_color": "#000000",
+  "border_radius": 12,
+  "padding": 10
+}
