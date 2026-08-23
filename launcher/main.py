@@ -1147,10 +1147,6 @@ class VortexLauncher(QMainWindow):
         self._worker      = None
         self._gif_animator: GifCursorAnimator | None = None
 
-        for ext in ("*.ttf","*.otf"):
-            for fp in FONTS_DIR.glob(ext):
-                QFontDatabase.addApplicationFont(str(fp))
-
         self.setWindowTitle("Vortex Launcher")
         self.setFixedSize(780, 600)
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
@@ -1635,6 +1631,7 @@ class VortexLauncher(QMainWindow):
             }}
         """
         self.backend_combo.setStyleSheet(combo_qss)
+        self.backend_combo.setFixedHeight(36)
         lay.addWidget(self.backend_combo)
 
         # 1b. Fun & Retro Modes Combo
@@ -1656,6 +1653,7 @@ class VortexLauncher(QMainWindow):
                 self.fun_combo.setCurrentIndex(idx)
 
         self.fun_combo.setStyleSheet(combo_qss)
+        self.fun_combo.setFixedHeight(36)
         lay.addWidget(self.fun_combo)
 
         # Crash tip note
@@ -1663,7 +1661,7 @@ class VortexLauncher(QMainWindow):
             "⚠️  If the game crashes on launch: try DX11 first, then Vulkan.\n"
             "    OpenGL (gl) can crash on systems without OpenGL 3.1+ or ANGLE support."
         )
-        crash_note.setStyleSheet("color:#C97B2A; font-size:10px; padding:4px 0px;")
+        crash_note.setStyleSheet("color:#C97B2A; font-size:10px; padding:4px 0px; font-family:'Segoe UI',sans-serif;")
         crash_note.setWordWrap(True)
         lay.addWidget(crash_note)
 
@@ -1684,6 +1682,7 @@ class VortexLauncher(QMainWindow):
                 self.power_combo.setCurrentIndex(idx)
 
         self.power_combo.setStyleSheet(combo_qss)
+        self.power_combo.setFixedHeight(36)
         lay.addWidget(self.power_combo)
 
         # 3. Checkboxes
