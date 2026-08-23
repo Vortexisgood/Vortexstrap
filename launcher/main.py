@@ -1052,14 +1052,10 @@ class VortexLauncher(QMainWindow):
             env["WGPU_BACKEND"] = backend
         # 'auto' → leave WGPU_BACKEND unset (runtime picks best available)
 
-        # GPU power preference — hint to Windows which adapter to prefer
+        # GPU power preference — hint to WGPU which adapter to prefer
         power = self.cfg.get("render_power", "high")
         if power == "high":
             env["WGPU_POWER_PREF"] = "high"
-            # Windows: hint OS to use high-performance GPU adapter
-            # Works on Windows 10+ with NVIDIA/AMD hybrid setups
-            env["SHIM_MCCOMPAT"]         = "0x800000001"   # NVIDIA Optimus hint
-            env["DISABLE_LAYER_AMD_SWITCHABLE_GRAPHICS_1"] = "1"  # force discrete AMD
         elif power == "low":
             env["WGPU_POWER_PREF"] = "low"
         # 'default' → leave unset
@@ -2047,7 +2043,11 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
         self.launch_btn.setText("Launching…")
         self.prog.show()
 
-        # Open Bloxstrap-style splash dialog (centered on screen)
+        # Record exe size now — if Vortex auto-updates itself during the session,
+        # the exe file will be replaced and its size will change.
+        self._exe_size_before_launch = VORTEX_EXE.stat().st_size if VORTEX_EXE.exists() else 0
+
+        # Open splash dialog
         self._splash_dialog = LaunchSplashDialog(self, on_cancel=self._cancel_launch)
         self._splash_dialog.show()
 
@@ -2088,6 +2088,73 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
         self.launch_btn.setText("▶   Launch Vortex")
         self.launch_btn.setEnabled(True)
         self._close_splash()
+        # If Vortex updated itself (exe replaced), auto re-patch the font
+        self._check_and_repatch_after_update()
+
+    def _check_and_repatch_after_update(self):
+        """Detects if Vortex auto-updated during the session and re-applies the font patch."""
+        if not VORTEX_EXE.exists():
+            return
+
+        size_before = getattr(self, '_exe_size_before_launch', 0)
+        size_after = VORTEX_EXE.stat().st_size
+
+        if size_before == 0 or size_before == size_after:
+            # No update happened
+            return
+
+        # Vortex replaced its own exe — the font patch is now gone.
+        # Invalidate the stale patch cache and update the backup.
+        self.cfg['is_patched'] = False
+        self.cfg.pop('_inter_cache', None)
+        save_cfg(self.cfg)
+
+        font_name = self.cfg.get('patched_font', '')
+        if not font_name:
+            self.badge.set_info(
+                f"Vortex updated ({size_before//1024//1024}MB → {size_after//1024//1024}MB). "
+                "No font saved — select a font and Apply again."
+            )
+            return
+
+        # We have a previously chosen font — try to find and re-apply it
+        saved_font_path = None
+        for f in FONTS_DIR.iterdir() if FONTS_DIR.exists() else []:
+            if f.stem == font_name or f.name == font_name:
+                saved_font_path = f
+                break
+
+        if saved_font_path is None:
+            self.badge.set_info(
+                f"Vortex updated to a new version. Font '{font_name}' not found in fonts/ folder. "
+                "Please re-apply manually."
+            )
+            return
+
+        # Update backup first so restore works cleanly on the new exe
+        try:
+            shutil.copy2(VORTEX_EXE, BACKUP_EXE)
+        except Exception:
+            pass
+
+        self.badge.set_info(
+            f"Vortex updated ({size_before//1024//1024}MB → {size_after//1024//1024}MB)! "
+            f"Re-applying '{font_name}' font automatically…"
+        )
+
+        # Re-patch on a background thread so UI stays responsive
+        w = PatchWorker(saved_font_path, cfg=self.cfg)
+        def _on_repatch_done(ok: bool, msg: str):
+            if ok:
+                self.cfg['is_patched'] = True
+                self.cfg['patched_font'] = font_name
+                save_cfg(self.cfg)
+                self.badge.set_ok(f"Auto re-patched after Vortex update! ({font_name})")
+            else:
+                self.badge.set_err(f"Auto re-patch failed: {msg} — please re-apply manually.")
+        w.done.connect(_on_repatch_done)
+        self._repatch_worker = w
+        w.start()
 
     def _on_game_error(self, msg: str):
         self.badge.set_err(f"Launch error: {msg}")
