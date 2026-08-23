@@ -2356,25 +2356,12 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
             self._splash_dialog.set_status("Vortex is running!")
             QTimer.singleShot(1000, self._close_splash)
 
-        # Start smart game overlay if a custom chat bubble is active
-        active_bubble = self.cfg.get("active_chat_bubble", "default")
-        if active_bubble != "default":
-            try:
-                self._game_overlay = ChatBubbleOverlay(theme_name=active_bubble)
-                self._game_overlay.show()
-            except Exception as ex:
-                print(f"Overlay error: {ex}")
-
     def _close_splash(self):
         if hasattr(self, '_splash_dialog') and self._splash_dialog:
             self._splash_dialog.accept()
             self._splash_dialog = None
 
     def _cancel_launch(self):
-        if hasattr(self, '_game_overlay') and self._game_overlay:
-            self._game_overlay.close()
-            self._game_overlay = None
-
         if hasattr(self, '_worker') and self._worker and self._worker.isRunning():
             self._worker.terminate()
             self.badge.set_info("Launch cancelled.")
@@ -2383,10 +2370,6 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
             self.launch_btn.setEnabled(True)
 
     def _on_game_finished(self):
-        if hasattr(self, '_game_overlay') and self._game_overlay:
-            self._game_overlay.close()
-            self._game_overlay = None
-
         self.launch_btn.setText("▶   Launch Vortex")
         self.launch_btn.setEnabled(True)
         self._close_splash()
