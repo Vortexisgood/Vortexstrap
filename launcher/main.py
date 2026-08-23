@@ -780,6 +780,162 @@ class LaunchWorker(QThread):
             self.error_sig.emit(str(e))
 
 
+# ── Smart Click-Through Game Overlay for ChatBubble ───────────────────────────
+class RECT_STRUCT(ctypes.Structure):
+    _fields_ = [
+        ("left", ctypes.c_long),
+        ("top", ctypes.c_long),
+        ("right", ctypes.c_long),
+        ("bottom", ctypes.c_long),
+    ]
+
+def find_vortex_game_hwnd() -> int:
+    if not IS_WINDOWS:
+        return 0
+    found = [0]
+    def _enum_win_cb(hwnd, _):
+        if ctypes.windll.user32.IsWindowVisible(hwnd):
+            length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                buf = ctypes.create_unicode_buffer(length + 1)
+                ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+                title = buf.value.lower()
+                if "vortex" in title and "vortexstrap" not in title and "launcher" not in title:
+                    found[0] = hwnd
+                    return False
+        return True
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    try:
+        ctypes.windll.user32.EnumWindows(WNDENUMPROC(_enum_win_cb), 0)
+    except Exception:
+        pass
+    return found[0]
+
+
+class ChatBubbleOverlay(QWidget):
+    """
+    Hardware-accelerated, transparent, click-through overlay that tracks Vortex
+    and renders custom chat bubble skins and tails directly over the game.
+    """
+    def __init__(self, theme_name: str = "Neo", parent=None):
+        super().__init__(parent)
+        self.theme_name = theme_name
+        self.vortex_hwnd = 0
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool |
+            Qt.WindowType.WindowDoesNotAcceptFocus
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+        self._load_theme_assets()
+
+        self.tracker_timer = QTimer(self)
+        self.tracker_timer.timeout.connect(self._track_vortex_window)
+        self.tracker_timer.start(25)  # 40 FPS sync
+
+    def _load_theme_assets(self):
+        self.bubble_pixmap = None
+        self.tail_pixmap   = None
+        self.text_color    = "#FFFFFF"
+        self.user_color    = "#A78BFA"
+        self.bg_color      = "#000000"
+
+        theme_dir = BUBBLES_DIR / self.theme_name
+        if theme_dir.exists():
+            cfg_file = theme_dir / "config.json"
+            if cfg_file.exists():
+                try:
+                    cdata = json.loads(cfg_file.read_text(encoding="utf-8"))
+                    self.text_color = cdata.get("text_color", "#FFFFFF")
+                    self.user_color = cdata.get("username_color", "#A78BFA")
+                    self.bg_color   = cdata.get("background_color", "#000000")
+                except:
+                    pass
+
+            p_bubble = theme_dir / "bubble.png"
+            if p_bubble.exists():
+                pix = QPixmap(str(p_bubble))
+                if not pix.isNull():
+                    self.bubble_pixmap = pix
+
+            p_tail = theme_dir / "tail.png"
+            if p_tail.exists():
+                pix = QPixmap(str(p_tail))
+                if not pix.isNull():
+                    self.tail_pixmap = pix
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if IS_WINDOWS:
+            try:
+                hwnd = int(self.winId())
+                GWL_EXSTYLE = -20
+                WS_EX_TRANSPARENT = 0x00000020
+                WS_EX_LAYERED     = 0x00080000
+                WS_EX_TOOLWINDOW  = 0x00000080
+                WS_EX_NOACTIVATE  = 0x08000000
+                cur = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                ctypes.windll.user32.SetWindowLongW(
+                    hwnd, GWL_EXSTYLE,
+                    cur | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+                )
+            except Exception:
+                pass
+
+    def _track_vortex_window(self):
+        if not IS_WINDOWS:
+            return
+
+        if not self.vortex_hwnd or not ctypes.windll.user32.IsWindow(self.vortex_hwnd) or not ctypes.windll.user32.IsWindowVisible(self.vortex_hwnd):
+            self.vortex_hwnd = find_vortex_game_hwnd()
+            if not self.vortex_hwnd:
+                if self.isVisible():
+                    self.hide()
+                return
+
+        # Check if game is minimized
+        if ctypes.windll.user32.IsIconic(self.vortex_hwnd):
+            if self.isVisible():
+                self.hide()
+            return
+
+        # Check foreground state
+        fg = ctypes.windll.user32.GetForegroundWindow()
+
+        rect = RECT_STRUCT()
+        ctypes.windll.user32.GetWindowRect(self.vortex_hwnd, ctypes.byref(rect))
+        w = rect.right - rect.left
+        h = rect.bottom - rect.top
+
+        if w > 100 and h > 100:
+            if not self.isVisible():
+                self.show()
+            self.setGeometry(rect.left, rect.top, w, h)
+            if fg == self.vortex_hwnd:
+                HWND_TOPMOST = -1
+                SWP_NOMOVE = 0x0002
+                SWP_NOSIZE = 0x0001
+                SWP_NOACTIVATE = 0x0010
+                ctypes.windll.user32.SetWindowPos(int(self.winId()), HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+            self.update()
+
+    def paintEvent(self, event):
+        if not self.vortex_hwnd:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+        # Draw the custom Neon Tail & Bubble Theme badge overlay in the active theme
+        if self.tail_pixmap and not self.tail_pixmap.isNull():
+            painter.drawPixmap(14, 58, self.tail_pixmap.scaled(28, 28, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
+
 # Bloxstrap-style compact launch splash screen
 class LaunchSplashDialog(QDialog):
     """
@@ -2200,12 +2356,25 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
             self._splash_dialog.set_status("Vortex is running!")
             QTimer.singleShot(1000, self._close_splash)
 
+        # Start smart game overlay if a custom chat bubble is active
+        active_bubble = self.cfg.get("active_chat_bubble", "default")
+        if active_bubble != "default":
+            try:
+                self._game_overlay = ChatBubbleOverlay(theme_name=active_bubble)
+                self._game_overlay.show()
+            except Exception as ex:
+                print(f"Overlay error: {ex}")
+
     def _close_splash(self):
         if hasattr(self, '_splash_dialog') and self._splash_dialog:
             self._splash_dialog.accept()
             self._splash_dialog = None
 
     def _cancel_launch(self):
+        if hasattr(self, '_game_overlay') and self._game_overlay:
+            self._game_overlay.close()
+            self._game_overlay = None
+
         if hasattr(self, '_worker') and self._worker and self._worker.isRunning():
             self._worker.terminate()
             self.badge.set_info("Launch cancelled.")
@@ -2214,6 +2383,10 @@ QToolTip{{background:#1A1030;color:#E2D9FF;border:1px solid {acc};border-radius:
             self.launch_btn.setEnabled(True)
 
     def _on_game_finished(self):
+        if hasattr(self, '_game_overlay') and self._game_overlay:
+            self._game_overlay.close()
+            self._game_overlay = None
+
         self.launch_btn.setText("▶   Launch Vortex")
         self.launch_btn.setEnabled(True)
         self._close_splash()
