@@ -1607,12 +1607,32 @@ class VortexLauncher(QMainWindow):
 
         acc = self.cfg.get("accent", "#7C3AED")
         combo_qss = f"""
-            QComboBox{{background:rgba(255,255,255,0.07);border:1px solid rgba(124,58,237,0.45);
-                       border-radius:8px;color:#E2D9FF;padding:8px 12px;font-size:12px;}}
-            QComboBox::drop-down{{border:none;width:24px;}}
-            QComboBox::down-arrow{{image:none;}}
-            QComboBox QAbstractItemView{{background:#1A1030;color:#E2D9FF;
-                selection-background-color:{acc};border:1px solid rgba(124,58,237,0.4);}}
+            QComboBox {{
+                background: rgba(255, 255, 255, 0.07);
+                border: 1px solid rgba(124, 58, 237, 0.45);
+                border-radius: 8px;
+                color: #E2D9FF;
+                padding: 4px 12px;
+                font-size: 12px;
+                font-family: "Segoe UI", sans-serif;
+                min-height: 32px;
+                max-height: 32px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 24px;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+            }}
+            QComboBox QAbstractItemView {{
+                background: #1A1030;
+                color: #E2D9FF;
+                selection-background-color: {acc};
+                border: 1px solid rgba(124, 58, 237, 0.4);
+                font-family: "Segoe UI", sans-serif;
+                font-size: 12px;
+            }}
         """
         self.backend_combo.setStyleSheet(combo_qss)
         lay.addWidget(self.backend_combo)
@@ -2311,16 +2331,25 @@ QPushButton:disabled{color:#3A3060;border-color:rgba(124,58,237,0.15);}
 
     def _global_qss(self, acc, fam):
         return f"""
-* {{font-family:"Segoe UI", -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;}}
-QWidget {{color:#E2D9FF;background:transparent;}}
+* {{
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;
+}}
+QWidget {{
+    color: #E2D9FF;
+    background: transparent;
+}}
+QLabel {{
+    font-family: "Segoe UI", -apple-system, sans-serif;
+}}
 QComboBox {{
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(124,58,237,0.45);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(124, 58, 237, 0.45);
     border-radius: 8px;
     color: #E2D9FF;
-    padding: 6px 12px;
-    font-size: 13px;
-    min-height: 28px;
+    padding: 4px 12px;
+    font-size: 12px;
+    min-height: 32px;
+    max-height: 32px;
 }}
 QScrollBar:vertical{{background:rgba(255,255,255,0.04);width:5px;border-radius:2px;}}
 QScrollBar::handle:vertical{{background:{acc};border-radius:2px;min-height:20px;}}
