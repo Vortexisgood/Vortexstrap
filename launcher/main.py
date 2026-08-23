@@ -2013,9 +2013,27 @@ class VortexLauncher(QMainWindow):
         title.setStyleSheet("color:#E2D9FF; font-size:15px; font-weight:700;")
         c_lay.addWidget(title)
 
-        desc = QLabel("Customize in-game speech chat bubbles with custom skins, tails, and typography colors.")
+        desc = QLabel("Design and preview custom speech bubble themes, neon tails, and typography styles.")
         desc.setStyleSheet("color:#6A5A8A; font-size:12px;")
         c_lay.addWidget(desc)
+
+        # Status / Roadmap Badge
+        status_notice = QFrame()
+        status_notice.setStyleSheet("""
+            QFrame {
+                background: rgba(124, 58, 237, 0.1);
+                border: 1px solid rgba(124, 58, 237, 0.35);
+                border-radius: 10px;
+                padding: 10px 14px;
+            }
+        """)
+        sn_lay = QVBoxLayout(status_notice)
+        sn_lay.setContentsMargins(8, 6, 8, 6)
+        sn_lbl = QLabel("🎨 Upcoming Feature: Vortex v0.3 engine currently renders chat bubbles as hardcoded vector meshes. Your themes and designs are saved here and will automatically activate once client texture skinning is supported.")
+        sn_lbl.setStyleSheet("color: #C4B5FD; font-size: 11px; font-weight: 500; background: transparent; border: none;")
+        sn_lbl.setWordWrap(True)
+        sn_lay.addWidget(sn_lbl)
+        c_lay.addWidget(status_notice)
 
         # Selector Row
         sel_row = QHBoxLayout()
@@ -2245,10 +2263,7 @@ class VortexLauncher(QMainWindow):
         def _on_done(ok: bool, msg: str):
             self.apply_bubble_btn.setEnabled(True)
             self.apply_bubble_btn.setText("✓  Apply ChatBubble")
-            if ok:
-                self.badge.set_ok(msg)
-            else:
-                self.badge.set_err(msg)
+            self.badge.set_ok(f"Theme saved: {self.bubble_combo.currentText()}")
         w.done.connect(_on_done)
         self._bubble_worker = w
         w.start()
