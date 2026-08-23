@@ -662,7 +662,69 @@ class FontPatcher:
         except Exception as e:
             return False, f"Restore error: {e}"
 
+
+class ChatBubblePatcher:
+    """
+    Patches and manages in-game chat bubble styles, themes, and colors for Vortex.exe.
+    """
+    @staticmethod
+    def patch(theme_name: str, cfg: dict = None) -> tuple[bool, str]:
+        if not VORTEX_EXE.exists():
+            return False, "Vortex binary not found!"
+
+        if theme_name == "default":
+            return ChatBubblePatcher.restore(cfg)
+
+        theme_dir = BUBBLES_DIR / theme_name
+        if not theme_dir.exists():
+            return False, f"Theme folder not found: {theme_name}"
+
+        cfg_file = theme_dir / "config.json"
+        if not cfg_file.exists():
+            return False, "config.json missing in theme folder."
+
+        try:
+            theme_cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
+        except Exception as e:
+            return False, f"Invalid config.json: {e}"
+
+        # Ensure backup exists
+        if not BACKUP_EXE.exists():
+            try:
+                shutil.copy2(VORTEX_EXE, BACKUP_EXE)
+            except Exception as e:
+                return False, f"Failed to create backup: {e}"
+
+        # Apply settings
+        if cfg is not None:
+            cfg["active_chat_bubble"] = theme_name
+            save_cfg(cfg)
+
+        name = theme_cfg.get("name", theme_name)
+        return True, f"ChatBubble skin '{name}' applied successfully!"
+
+    @staticmethod
+    def restore(cfg: dict = None) -> tuple[bool, str]:
+        if cfg is not None:
+            cfg["active_chat_bubble"] = "default"
+            save_cfg(cfg)
+        return True, "ChatBubble restored to default."
+
+
 # Worker threads for running patch/restore/launch operations off the UI thread
+class ChatBubblePatchWorker(QThread):
+    done = pyqtSignal(bool, str)
+
+    def __init__(self, theme_name: str, cfg=None):
+        super().__init__()
+        self.theme_name = theme_name
+        self.cfg = cfg or {}
+
+    def run(self):
+        ok, msg = ChatBubblePatcher.patch(self.theme_name, cfg=self.cfg)
+        self.done.emit(ok, msg)
+
+
 class PatchWorker(QThread):
     done  = pyqtSignal(bool, str)
 
@@ -1828,47 +1890,64 @@ class VortexLauncher(QMainWindow):
 
         c_lay.addLayout(sel_row)
 
-        # Preview Frame
+        # Preview Frame (Simulated in-game canvas)
         self.bubble_preview_frame = QFrame()
         self.bubble_preview_frame.setStyleSheet("""
             QFrame {
-                background: rgba(10, 6, 20, 0.7);
-                border: 1px solid rgba(124, 58, 237, 0.25);
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #130E28, stop:1 #0A0614);
+                border: 1px solid rgba(124, 58, 237, 0.3);
                 border-radius: 12px;
-                padding: 16px;
             }
         """)
         p_lay = QVBoxLayout(self.bubble_preview_frame)
-        p_lay.setContentsMargins(16, 16, 16, 16)
-        p_lay.setSpacing(8)
+        p_lay.setContentsMargins(16, 12, 16, 16)
+        p_lay.setSpacing(6)
 
-        self.preview_header = QLabel("Skin Preview:")
-        self.preview_header.setStyleSheet("color:#A78BFA; font-size:12px; font-weight:700;")
+        self.preview_header = QLabel("Skin Preview (In-Game Perspective):")
+        self.preview_header.setStyleSheet("color:#A78BFA; font-size:11px; font-weight:700; background:transparent; border:none;")
         p_lay.addWidget(self.preview_header)
+
+        # Center container for the speech balloon + tail + avatar name
+        center_stage = QWidget()
+        center_stage.setStyleSheet("background: transparent; border: none;")
+        c_stage_lay = QVBoxLayout(center_stage)
+        c_stage_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        c_stage_lay.setContentsMargins(0, 4, 0, 4)
+        c_stage_lay.setSpacing(0)
 
         # Bubble visual box
         self.bubble_box = QFrame()
-        self.bubble_box.setFixedHeight(75)
+        self.bubble_box.setObjectName("bubble_box")
+        self.bubble_box.setMinimumWidth(280)
+        self.bubble_box.setMaximumWidth(460)
         self.b_box_lay = QVBoxLayout(self.bubble_box)
-        self.b_box_lay.setContentsMargins(14, 8, 14, 8)
-        self.b_box_lay.setSpacing(2)
+        self.b_box_lay.setContentsMargins(16, 10, 16, 10)
+        self.b_box_lay.setSpacing(3)
 
-        self.preview_username = QLabel("Player123")
-        self.preview_username.setStyleSheet("color:#A78BFA; font-size:11px; font-weight:700;")
-        self.preview_text = QLabel("Hello from VortexStrap! Custom ChatBubble is active ✨")
-        self.preview_text.setStyleSheet("color:#FFFFFF; font-size:13px; font-weight:600;")
+        self.preview_username = QLabel("Dinamik")
+        self.preview_username.setObjectName("preview_username")
+        self.preview_text = QLabel("Custom ChatBubble is active in Vortex! ✨")
+        self.preview_text.setObjectName("preview_text")
         self.preview_text.setWordWrap(True)
 
         self.b_box_lay.addWidget(self.preview_username)
         self.b_box_lay.addWidget(self.preview_text)
-        p_lay.addWidget(self.bubble_box)
+        c_stage_lay.addWidget(self.bubble_box, 0, Qt.AlignmentFlag.AlignCenter)
 
-        # Tail preview
+        # Tail preview (centered directly under the bubble)
         self.tail_preview_lbl = QLabel()
-        self.tail_preview_lbl.setFixedSize(32, 32)
-        self.tail_preview_lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        p_lay.addWidget(self.tail_preview_lbl)
+        self.tail_preview_lbl.setObjectName("tail_preview_lbl")
+        self.tail_preview_lbl.setFixedSize(36, 28)
+        self.tail_preview_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.tail_preview_lbl.setStyleSheet("background: transparent; border: none;")
+        c_stage_lay.addWidget(self.tail_preview_lbl, 0, Qt.AlignmentFlag.AlignCenter)
 
+        # Avatar name tag (simulating the character below the bubble)
+        self.avatar_tag = QLabel("👤 Dinamik")
+        self.avatar_tag.setStyleSheet("color: rgba(226, 217, 255, 0.7); font-size: 11px; font-weight: 600; background: transparent; border: none; margin-top: 2px;")
+        c_stage_lay.addWidget(self.avatar_tag, 0, Qt.AlignmentFlag.AlignCenter)
+
+        p_lay.addWidget(center_stage)
         c_lay.addWidget(self.bubble_preview_frame)
 
         # Action buttons
@@ -1924,14 +2003,26 @@ class VortexLauncher(QMainWindow):
         theme_key = self.bubble_combo.currentData()
         if not theme_key or theme_key == "default":
             self.bubble_box.setStyleSheet("""
-                QFrame {
+                QFrame#bubble_box {
                     background: rgba(255, 255, 255, 0.95);
-                    border: 1px solid rgba(200, 200, 200, 0.5);
-                    border-radius: 12px;
+                    border: 1px solid rgba(220, 220, 220, 0.8);
+                    border-radius: 14px;
+                }
+                QLabel#preview_username {
+                    color: #7C3AED;
+                    font-size: 11px;
+                    font-weight: 700;
+                    background: transparent;
+                    border: none;
+                }
+                QLabel#preview_text {
+                    color: #111827;
+                    font-size: 13px;
+                    font-weight: 600;
+                    background: transparent;
+                    border: none;
                 }
             """)
-            self.preview_username.setStyleSheet("color:#6B21A8; font-size:11px; font-weight:700;")
-            self.preview_text.setStyleSheet("color:#111827; font-size:13px; font-weight:600;")
             self.tail_preview_lbl.clear()
             return
 
@@ -1940,7 +2031,7 @@ class VortexLauncher(QMainWindow):
         text_col = "#FFFFFF"
         user_col = "#A78BFA"
         bg_col = "#000000"
-        radius = 12
+        radius = 14
 
         if cfg_file.exists():
             try:
@@ -1953,37 +2044,68 @@ class VortexLauncher(QMainWindow):
                 pass
 
         self.bubble_box.setStyleSheet(f"""
-            QFrame {{
+            QFrame#bubble_box {{
                 background: {bg_col};
-                border: 1px solid rgba(124, 58, 237, 0.4);
+                border: 1.5px solid rgba(167, 139, 250, 0.5);
                 border-radius: {radius}px;
             }}
+            QLabel#preview_username {{
+                color: {user_col};
+                font-size: 11px;
+                font-weight: 700;
+                background: transparent;
+                border: none;
+            }}
+            QLabel#preview_text {{
+                color: {text_col};
+                font-size: 13px;
+                font-weight: 600;
+                background: transparent;
+                border: none;
+            }}
         """)
-        self.preview_username.setStyleSheet(f"color:{user_col}; font-size:11px; font-weight:700;")
-        self.preview_text.setStyleSheet(f"color:{text_col}; font-size:13px; font-weight:600;")
 
         tail_file = theme_dir / "tail.png"
         if tail_file.exists():
             pix = QPixmap(str(tail_file))
             if not pix.isNull():
-                self.tail_preview_lbl.setPixmap(pix.scaled(28, 28, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                self.tail_preview_lbl.setPixmap(pix.scaled(32, 26, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         else:
             self.tail_preview_lbl.clear()
 
     def _apply_selected_bubble(self):
         theme_key = self.bubble_combo.currentData()
-        self.cfg["active_chat_bubble"] = theme_key
-        save_cfg(self.cfg)
-        self.badge.set_ok(f"ChatBubble skin applied: {self.bubble_combo.currentText()}")
+        self.apply_bubble_btn.setEnabled(False)
+        self.apply_bubble_btn.setText("Applying…")
+
+        w = ChatBubblePatchWorker(theme_key, cfg=self.cfg)
+        def _on_done(ok: bool, msg: str):
+            self.apply_bubble_btn.setEnabled(True)
+            self.apply_bubble_btn.setText("✓  Apply ChatBubble")
+            if ok:
+                self.badge.set_ok(msg)
+            else:
+                self.badge.set_err(msg)
+        w.done.connect(_on_done)
+        self._bubble_worker = w
+        w.start()
 
     def _reset_bubble_theme(self):
+        self.reset_bubble_btn.setEnabled(False)
         self.cfg["active_chat_bubble"] = "default"
         save_cfg(self.cfg)
-        for idx in range(self.bubble_combo.count()):
-            if self.bubble_combo.itemData(idx) == "default":
-                self.bubble_combo.setCurrentIndex(idx)
-                break
-        self.badge.set_info("ChatBubble restored to default.")
+
+        w = ChatBubblePatchWorker("default", cfg=self.cfg)
+        def _on_done(ok: bool, msg: str):
+            self.reset_bubble_btn.setEnabled(True)
+            for idx in range(self.bubble_combo.count()):
+                if self.bubble_combo.itemData(idx) == "default":
+                    self.bubble_combo.setCurrentIndex(idx)
+                    break
+            self.badge.set_info(msg)
+        w.done.connect(_on_done)
+        self._bubble_worker = w
+        w.start()
 
     # ── Helpers ───────────────────────────────────────────────────────────────
     def _btn_qss(self, acc):
