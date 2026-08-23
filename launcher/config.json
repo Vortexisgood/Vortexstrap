@@ -1,35 +1,15 @@
 {
   "accent": "#7C3AED",
   "ui_font": "Segoe UI",
-  "patched_font": "⭐ Comic Sans MS",
-  "is_patched": true,
+  "patched_font": "Determination",
+  "is_patched": false,
   "custom_cursor": "system",
-  "render_backend": "dx12",
+  "render_backend": "auto",
   "render_power": "high",
   "render_antialiasing": true,
   "system_cursor": true,
   "font_mode": "registry",
   "fun_mode": "none",
-  "_inter_cache": {
-    "exe_size": 100888576,
-    "offsets": [
-      64763168,
-      66396813,
-      66803878,
-      67218961,
-      75310326,
-      75921509,
-      78576686
-    ],
-    "spacing": {
-      "64763168": 407054,
-      "66396813": 407054,
-      "66803878": 415070,
-      "67218961": 412846,
-      "75310326": 415070,
-      "75921509": 407054,
-      "78576686": 412846
-    }
-  },
-  "software_rendering": true
+  "software_rendering": false,
+  "active_chat_bubble": "Neo"
 }

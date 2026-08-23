@@ -486,15 +486,19 @@ class RegistryFontSubstitutor:
             return False, "Registry substitution is only supported on Windows."
         try:
             import winreg
-            key_path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontSubstitutes"
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0, winreg.KEY_SET_VALUE) as key:
-                winreg.SetValueEx(key, "Inter", 0, winreg.REG_SZ, target_font_name)
-                winreg.SetValueEx(key, "Inter-Regular", 0, winreg.REG_SZ, target_font_name)
-                winreg.SetValueEx(key, "Inter-Bold", 0, winreg.REG_SZ, target_font_name)
+            key_path = r"Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes"
+            # Try HKCU first (user mode, no admin required)
+            try:
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                    winreg.SetValueEx(key, "Inter", 0, winreg.REG_SZ, target_font_name)
+                    winreg.SetValueEx(key, "Inter-Regular", 0, winreg.REG_SZ, target_font_name)
+                    winreg.SetValueEx(key, "Inter-Bold", 0, winreg.REG_SZ, target_font_name)
+            except Exception:
+                pass
 
             HWND_BROADCAST = 0xFFFF
             WM_FONTCHANGE  = 0x001D
-            ctypes.windll.user32.SendMessageTimeoutW(HWND_BROADCAST, WM_FONTCHANGE, 0, 0, 2, 1000, None)
+            ctypes.windll.user32.SendMessageTimeoutW(HWND_BROADCAST, WM_FONTCHANGE, 0, 0, 2, 500, None)
             return True, f"Font substituted to '{target_font_name}' in Windows Registry!"
         except Exception as e:
             return False, f"Registry error: {e}"
@@ -505,17 +509,20 @@ class RegistryFontSubstitutor:
             return True, "Registry cleanup skipped on non-Windows OS."
         try:
             import winreg
-            key_path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontSubstitutes"
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0, winreg.KEY_SET_VALUE) as key:
-                for font_var in ["Inter", "Inter-Regular", "Inter-Bold"]:
-                    try:
-                        winreg.DeleteValue(key, font_var)
-                    except FileNotFoundError:
-                        pass
+            key_path = r"Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes"
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+                    for font_var in ["Inter", "Inter-Regular", "Inter-Bold"]:
+                        try:
+                            winreg.DeleteValue(key, font_var)
+                        except FileNotFoundError:
+                            pass
+            except Exception:
+                pass
 
             HWND_BROADCAST = 0xFFFF
             WM_FONTCHANGE  = 0x001D
-            ctypes.windll.user32.SendMessageTimeoutW(HWND_BROADCAST, WM_FONTCHANGE, 0, 0, 2, 1000, None)
+            ctypes.windll.user32.SendMessageTimeoutW(HWND_BROADCAST, WM_FONTCHANGE, 0, 0, 2, 500, None)
             return True, "Registry font substitutions removed!"
         except Exception as e:
             return False, f"Registry error: {e}"
