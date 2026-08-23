@@ -1157,8 +1157,8 @@ class VortexLauncher(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         acc = self.cfg.get("accent","#7C3AED")
-        fam = self.cfg.get("ui_font","Segoe UI")
-        QApplication.instance().setFont(QFont(fam, 12))
+        fam = "Segoe UI"
+        QApplication.instance().setFont(QFont("Segoe UI", 10))
         QApplication.instance().setStyleSheet(self._global_qss(acc, fam))
 
         self._apply_cursor(self.cfg.get("custom_cursor", "neon_arrow"))
@@ -1339,10 +1339,11 @@ class VortexLauncher(QMainWindow):
             QTabBar::tab {{
                 background: rgba(255,255,255,0.04);
                 color: #A89BC2;
-                padding: 8px 16px;
-                margin-right: 6px;
+                padding: 7px 12px;
+                margin-right: 4px;
                 border-radius: 8px;
                 font-weight: 600;
+                font-size: 12px;
             }}
             QTabBar::tab:selected {{
                 background: rgba(124,58,237,0.25);
@@ -1355,11 +1356,11 @@ class VortexLauncher(QMainWindow):
         """)
 
         self.tabs.addTab(self._main_tab(), "Launcher & Font")
-        self.tabs.addTab(self._render_tab(), "Render & Graphics")
-        self.tabs.addTab(self._chat_bubbles_tab(), "💬 ChatBubble")
+        self.tabs.addTab(self._render_tab(), "Graphics")
+        self.tabs.addTab(self._chat_bubbles_tab(), "ChatBubble")
         self.tabs.addTab(self._gallery_tab(), "Screenshots")
-        self.tabs.addTab(self._cursor_tab(), "Custom Cursor")
-        self.tabs.addTab(self._deployment_tab(), "Deployment")
+        self.tabs.addTab(self._cursor_tab(), "Cursor")
+        self.tabs.addTab(self._deployment_tab(), "Settings")
 
         root.addWidget(self.tabs, 1)
 
@@ -2310,8 +2311,17 @@ QPushButton:disabled{color:#3A3060;border-color:rgba(124,58,237,0.15);}
 
     def _global_qss(self, acc, fam):
         return f"""
-* {{font-family:"{fam}";}}
+* {{font-family:"Segoe UI", -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;}}
 QWidget {{color:#E2D9FF;background:transparent;}}
+QComboBox {{
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(124,58,237,0.45);
+    border-radius: 8px;
+    color: #E2D9FF;
+    padding: 6px 12px;
+    font-size: 13px;
+    min-height: 28px;
+}}
 QScrollBar:vertical{{background:rgba(255,255,255,0.04);width:5px;border-radius:2px;}}
 QScrollBar::handle:vertical{{background:{acc};border-radius:2px;min-height:20px;}}
 QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{{height:0;}}
