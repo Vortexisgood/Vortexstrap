@@ -1783,269 +1783,191 @@ class VortexLauncher(QMainWindow):
     # ── TAB 2: Render & Grafik Ayarları ────────────────────────────────────────
     def _render_tab(self) -> Card:
         card = Card()
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(24, 20, 24, 20)
-        lay.setSpacing(14)
+        outer = QVBoxLayout(card)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
+        # Scrollable content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea{background:transparent;border:none;}")
+
+        inner_widget = QWidget()
+        inner_widget.setStyleSheet("background:transparent;")
+        lay = QVBoxLayout(inner_widget)
+        lay.setContentsMargins(24, 18, 24, 10)
+        lay.setSpacing(8)
+
+        acc = self.cfg.get("accent", "#7C3AED")
+
+        # Title
         title = QLabel("Render Engine & Graphics Settings")
         title.setStyleSheet("color:#E2D9FF; font-size:14px; font-weight:700;")
         lay.addWidget(title)
-
-        desc = QLabel("Configure graphics & performance settings for Vortex (Rust/WGPU engine):")
-        desc.setStyleSheet("color:#6A5A8A; font-size:11px;")
+        desc = QLabel("Configure graphics & performance for Vortex (Rust/WGPU engine):")
+        desc.setStyleSheet("color:#6A5A8A; font-size:10px;")
         lay.addWidget(desc)
 
-        # 1. Render Backend Combo
-        lay.addWidget(QLabel("Render Backend (WGPU Engine):"))
-        self.backend_combo = QComboBox()
-        backends = [
-            ("auto",   "Automatic (Let Vortex Decide — Recommended)"),
-            ("dx12",   "DirectX 12  ✓ Best for Windows 10/11 (NVIDIA/AMD)"),
-            ("dx11",   "DirectX 11  ✓ Most compatible — use if DX12 crashes"),
-            ("vulkan", "Vulkan       High Performance (NVIDIA/AMD, needs Vulkan 1.1+)"),
-            ("gl",     "OpenGL       Legacy fallback (slower, use only if others fail)"),
-        ]
-        for key, name in backends:
-            self.backend_combo.addItem(name, key)
-
-        cur_backend = self.cfg.get("render_backend", "auto")
-        for idx in range(self.backend_combo.count()):
-            if self.backend_combo.itemData(idx) == cur_backend:
-                self.backend_combo.setCurrentIndex(idx)
-
-        acc = self.cfg.get("accent", "#7C3AED")
+        lbl_qss = "color:#A89BC2; font-size:11px;"
         combo_qss = f"""
             QComboBox {{
-                background: rgba(255, 255, 255, 0.07);
-                border: 1px solid rgba(124, 58, 237, 0.45);
-                border-radius: 8px;
-                color: #E2D9FF;
-                padding: 4px 12px;
-                font-size: 12px;
+                background: rgba(255,255,255,0.07);
+                border: 1px solid rgba(124,58,237,0.45);
+                border-radius: 8px; color: #E2D9FF;
+                padding: 0px 12px; font-size: 12px;
                 font-family: "Segoe UI", sans-serif;
-                min-height: 32px;
-                max-height: 32px;
             }}
-            QComboBox::drop-down {{
-                border: none;
-                width: 24px;
-            }}
-            QComboBox::down-arrow {{
-                image: none;
-            }}
+            QComboBox::drop-down {{border:none; width:20px;}}
+            QComboBox::down-arrow {{image:none;}}
             QComboBox QAbstractItemView {{
-                background: #1A1030;
-                color: #E2D9FF;
-                selection-background-color: {acc};
-                border: 1px solid rgba(124, 58, 237, 0.4);
-                font-family: "Segoe UI", sans-serif;
-                font-size: 12px;
+                background:#1A1030; color:#E2D9FF;
+                selection-background-color:{acc};
+                border:1px solid rgba(124,58,237,0.4);
+                font-size:12px;
             }}
         """
+
+        # 1. Render Backend
+        lay.addWidget(QLabel("Render Backend (WGPU Engine):", styleSheet=lbl_qss))
+        self.backend_combo = QComboBox()
+        for key, name in [
+            ("auto",   "Automatic (Let Vortex Decide — Recommended)"),
+            ("dx12",   "DirectX 12  ✓  Best for Windows 10/11"),
+            ("dx11",   "DirectX 11  ✓  Most compatible (use if DX12 crashes)"),
+            ("vulkan", "Vulkan  —  High Performance (NVIDIA/AMD)"),
+            ("gl",     "OpenGL  —  Legacy fallback (slowest)"),
+        ]:
+            self.backend_combo.addItem(name, key)
+        cur = self.cfg.get("render_backend", "auto")
+        for i in range(self.backend_combo.count()):
+            if self.backend_combo.itemData(i) == cur:
+                self.backend_combo.setCurrentIndex(i)
         self.backend_combo.setStyleSheet(combo_qss)
-        self.backend_combo.setFixedHeight(36)
+        self.backend_combo.setFixedHeight(34)
         lay.addWidget(self.backend_combo)
 
-        # 1b. Performance & Graphics Presets
-        lay.addWidget(QLabel("⚡ Performance & Graphics Presets:"))
+        # 2. Performance Preset
+        lay.addWidget(QLabel("⚡ Performance & Graphics Preset:", styleSheet=lbl_qss))
         self.fun_combo = QComboBox()
-        fun_modes = [
-            ("none",              "Off (Standard Balanced Quality)"),
-            ("ultra_realistic",   "✨ Ultra Realistic / RTX Mode (Maximum Fidelity & FXAA)"),
-            ("ultra_performance", "⚡ Ultra Performance / Speedrunner Mode (High FPS, Low Latency)"),
-            ("cinematic",         "🎬 Cinematic Movie Mode (Smooth Anti-Aliasing)"),
-            ("battery_saver",     "🔋 Battery Saver / Eco Mode (Power Efficient)"),
-        ]
-        for key, name in fun_modes:
+        for key, name in [
+            ("none",              "Off  —  Standard Balanced Quality"),
+            ("ultra_realistic",   "✨  Ultra Realistic / RTX Mode (Max Fidelity + FXAA)"),
+            ("ultra_performance", "⚡  Ultra Performance / Speedrunner (High FPS, Low Latency)"),
+            ("cinematic",         "🎬  Cinematic Mode (Full Anti-Aliasing)"),
+            ("battery_saver",     "🔋  Battery Saver / Eco Mode (Power Efficient)"),
+        ]:
             self.fun_combo.addItem(name, key)
-
-        cur_fun = self.cfg.get("fun_mode", "none")
-        for idx in range(self.fun_combo.count()):
-            if self.fun_combo.itemData(idx) == cur_fun:
-                self.fun_combo.setCurrentIndex(idx)
-
+        cur = self.cfg.get("fun_mode", "none")
+        for i in range(self.fun_combo.count()):
+            if self.fun_combo.itemData(i) == cur:
+                self.fun_combo.setCurrentIndex(i)
         self.fun_combo.setStyleSheet(combo_qss)
-        self.fun_combo.setFixedHeight(36)
+        self.fun_combo.setFixedHeight(34)
         lay.addWidget(self.fun_combo)
 
-        # Crash tip note
-        crash_note = QLabel(
-            "⚠️  If the game crashes on launch: try DX11 first, then Vulkan.\n"
-            "    OpenGL (gl) can crash on systems without OpenGL 3.1+ or ANGLE support."
-        )
-        crash_note.setStyleSheet("color:#C97B2A; font-size:10px; padding:4px 0px; font-family:'Segoe UI',sans-serif;")
-        crash_note.setWordWrap(True)
-        lay.addWidget(crash_note)
+        tip = QLabel("⚠️  If game crashes: try DX11 first, then Vulkan.")
+        tip.setStyleSheet("color:#C97B2A; font-size:10px;")
+        lay.addWidget(tip)
 
-        # 2. Power Mode Combo
-        lay.addWidget(QLabel("GPU Power Mode:"))
+        # 3. GPU Power Mode
+        lay.addWidget(QLabel("GPU Power Mode:", styleSheet=lbl_qss))
         self.power_combo = QComboBox()
-        powers = [
-            ("high", "Dedicated GPU / High Performance (NVIDIA / AMD)"),
-            ("low", "Integrated GPU / Power Saving (Intel HD / Integrated)"),
+        for key, name in [
+            ("high",    "Dedicated GPU / High Performance (NVIDIA / AMD)"),
+            ("low",     "Integrated GPU / Power Saving (Intel HD)"),
             ("default", "System Default"),
-        ]
-        for key, name in powers:
+        ]:
             self.power_combo.addItem(name, key)
-
-        cur_power = self.cfg.get("render_power", "high")
-        for idx in range(self.power_combo.count()):
-            if self.power_combo.itemData(idx) == cur_power:
-                self.power_combo.setCurrentIndex(idx)
-
+        cur = self.cfg.get("render_power", "high")
+        for i in range(self.power_combo.count()):
+            if self.power_combo.itemData(i) == cur:
+                self.power_combo.setCurrentIndex(i)
         self.power_combo.setStyleSheet(combo_qss)
-        self.power_combo.setFixedHeight(36)
+        self.power_combo.setFixedHeight(34)
         lay.addWidget(self.power_combo)
 
-        # 3. Checkboxes
+        # 4. Checkboxes
         self.aa_cb = QCheckBox("Enable FXAA Anti-Aliasing")
         self.aa_cb.setChecked(self.cfg.get("render_antialiasing", True))
         self.aa_cb.setStyleSheet("color:#A89BC2; font-size:12px;")
         lay.addWidget(self.aa_cb)
 
-        self.software_rendering_cb = QCheckBox("Software Rendering / CPU Fallback (For very old GPUs)")
+        self.software_rendering_cb = QCheckBox("Software Rendering / CPU Fallback (Very old GPUs only)")
         self.software_rendering_cb.setChecked(self.cfg.get("software_rendering", False))
         self.software_rendering_cb.setStyleSheet("color:#D1783B; font-size:12px; font-weight:bold;")
         self.software_rendering_cb.setToolTip(
-            "Forces game to run on CPU using Microsoft Basic Render Driver (WARP DX12).\n"
-            "Use ONLY if your GPU is completely unsupported and game crashes on start."
+            "Forces WARP DX12 CPU renderer.\nUse ONLY if GPU is completely unsupported."
         )
         lay.addWidget(self.software_rendering_cb)
 
-        # ── Cinematic Shader (ReShade) Panel ──────────────────────────────────
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("color: rgba(124,58,237,0.25);")
-        lay.addWidget(sep)
-
-        shader_title = QLabel("✨ Cinematic Shaders (ReShade)")
-        shader_title.setStyleSheet("color:#E2D9FF; font-size:12px; font-weight:700;")
-        lay.addWidget(shader_title)
-
-        shader_desc = QLabel(
-            "Adds real-time Bloom, HDR lighting, ambient shadows, depth & color "
-            "grading on top of Vortex — without modifying any game files."
-        )
-        shader_desc.setStyleSheet("color:#6A5A8A; font-size:10px;")
-        shader_desc.setWordWrap(True)
-        lay.addWidget(shader_desc)
+        # ── Cinematic Shaders divider ─────────────────────────────────────────
+        div = QFrame()
+        div.setFrameShape(QFrame.Shape.HLine)
+        div.setFixedHeight(1)
+        div.setStyleSheet("background:rgba(124,58,237,0.3);")
+        lay.addWidget(div)
 
         reshade_row = QHBoxLayout()
         reshade_row.setSpacing(8)
+        rs_info = QVBoxLayout()
+        rs_info.setSpacing(1)
+        rs_info.addWidget(QLabel("✨ Cinematic Shaders (ReShade)",
+            styleSheet="color:#E2D9FF; font-size:12px; font-weight:700;"))
+        rs_info.addWidget(QLabel("Bloom · HDR · Ambient Shadows · Sharpen · Vibrance",
+            styleSheet="color:#6A5A8A; font-size:10px;"))
+        reshade_row.addLayout(rs_info, 1)
 
-        # Status label
         installed = ReShadeManager.is_installed()
         enabled   = ReShadeManager.is_enabled()
-        if installed and enabled:
-            status_text = "🟢 Active"
-        elif installed:
-            status_text = "🟡 Installed (disabled)"
-        else:
-            status_text = "⚫ Not installed"
-
-        self.reshade_status_lbl = QLabel(status_text)
-        self.reshade_status_lbl.setStyleSheet("color:#A89BC2; font-size:11px;")
+        self.reshade_status_lbl = QLabel(
+            "🟢 Active" if (installed and enabled) else
+            "🟡 Installed" if installed else "⚫ Not installed"
+        )
+        self.reshade_status_lbl.setStyleSheet("color:#A89BC2; font-size:10px;")
         reshade_row.addWidget(self.reshade_status_lbl)
-        reshade_row.addStretch()
 
         self.reshade_toggle_btn = QPushButton(
-            "Disable Shaders" if enabled else ("Enable Shaders" if installed else "Install & Enable")
+            "Disable" if enabled else ("Enable" if installed else "Install")
         )
         self.reshade_toggle_btn.setStyleSheet(self._btn_qss(acc))
         self.reshade_toggle_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.reshade_toggle_btn.setFixedHeight(32)
+        self.reshade_toggle_btn.setFixedHeight(30)
+        self.reshade_toggle_btn.setFixedWidth(80)
         self.reshade_toggle_btn.clicked.connect(self._toggle_reshade)
         reshade_row.addWidget(self.reshade_toggle_btn)
-
-        if installed:
-            uninstall_btn = QPushButton("Uninstall")
-            uninstall_btn.setStyleSheet(self._outline_qss())
-            uninstall_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-            uninstall_btn.setFixedHeight(32)
-            uninstall_btn.clicked.connect(self._uninstall_reshade)
-            reshade_row.addWidget(uninstall_btn)
-
         lay.addLayout(reshade_row)
 
-        # Progress bar (hidden by default, shown during install)
         self.reshade_progress = QProgressBar()
         self.reshade_progress.setRange(0, 100)
-        self.reshade_progress.setFixedHeight(6)
+        self.reshade_progress.setFixedHeight(4)
         self.reshade_progress.setTextVisible(False)
         self.reshade_progress.setStyleSheet(
-            f"QProgressBar{{background:rgba(255,255,255,0.08);border-radius:3px;}}"
-            f"QProgressBar::chunk{{background:{acc};border-radius:3px;}}"
+            f"QProgressBar{{background:rgba(255,255,255,0.08);border-radius:2px;}}"
+            f"QProgressBar::chunk{{background:{acc};border-radius:2px;}}"
         )
         self.reshade_progress.setVisible(False)
         lay.addWidget(self.reshade_progress)
 
         lay.addStretch()
+        scroll.setWidget(inner_widget)
+        outer.addWidget(scroll, 1)
 
-        # Save Button
+        # Save button pinned at bottom outside scroll
+        bottom = QWidget()
+        bottom.setStyleSheet("background:transparent;")
+        b_lay = QVBoxLayout(bottom)
+        b_lay.setContentsMargins(24, 4, 24, 14)
         save_render_btn = QPushButton("Save Render Settings")
         save_render_btn.setStyleSheet(self._btn_qss(acc))
         save_render_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         save_render_btn.clicked.connect(self._save_render_settings)
-        lay.addWidget(save_render_btn)
+        b_lay.addWidget(save_render_btn)
+        outer.addWidget(bottom)
 
         return card
 
-    def _toggle_reshade(self):
-        """Install-and-enable or toggle enable/disable ReShade."""
-        if not ReShadeManager.is_installed():
-            # Start install in background
-            self.reshade_progress.setVisible(True)
-            self.reshade_progress.setValue(0)
-            self.reshade_toggle_btn.setEnabled(False)
-            self.reshade_toggle_btn.setText("Installing…")
-            self._reshade_worker = ReShadeInstallWorker()
-            self._reshade_worker.progress.connect(self.reshade_progress.setValue)
-            self._reshade_worker.finished.connect(self._on_reshade_installed)
-            self._reshade_worker.start()
-        elif ReShadeManager.is_enabled():
-            ok, msg = ReShadeManager.disable()
-            self._refresh_reshade_ui()
-            self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
-        else:
-            ok, msg = ReShadeManager.enable()
-            self._refresh_reshade_ui()
-            self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
-
-    def _on_reshade_installed(self, ok: bool, msg: str):
-        self.reshade_progress.setVisible(False)
-        self.reshade_toggle_btn.setEnabled(True)
-        if ok:
-            self.badge.set_ok(msg)
-        else:
-            self.badge.set_err(msg)
-        self._refresh_reshade_ui()
-
-    def _refresh_reshade_ui(self):
-        installed = ReShadeManager.is_installed()
-        enabled   = ReShadeManager.is_enabled()
-        if installed and enabled:
-            self.reshade_status_lbl.setText("🟢 Active")
-            self.reshade_toggle_btn.setText("Disable Shaders")
-        elif installed:
-            self.reshade_status_lbl.setText("🟡 Installed (disabled)")
-            self.reshade_toggle_btn.setText("Enable Shaders")
-        else:
-            self.reshade_status_lbl.setText("⚫ Not installed")
-            self.reshade_toggle_btn.setText("Install & Enable")
-
-    def _uninstall_reshade(self):
-        ok, msg = ReShadeManager.uninstall()
-        self._refresh_reshade_ui()
-        self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
-
-    def _save_render_settings(self):
-        self.cfg["render_backend"]      = self.backend_combo.currentData()
-        self.cfg["fun_mode"]            = self.fun_combo.currentData()
-        self.cfg["render_power"]        = self.power_combo.currentData()
-        self.cfg["render_antialiasing"] = self.aa_cb.isChecked()
-        self.cfg["software_rendering"]   = self.software_rendering_cb.isChecked()
-        save_cfg(self.cfg)
-        self.badge.set_ok("Render & Graphics settings saved! Vortex will launch with these settings.")
 
 
     # ── TAB 3: Ekran Görüntüleri (Gallery) ────────────────────────────────────
