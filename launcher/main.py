@@ -121,6 +121,36 @@ sharp_clamp=0.035000
 fAdaptBaseMult=1.000000
 """
 
+# Advanced Depth Effects preset — SSAO Shadows + Bloom + Sharpen (requires depth buffer)
+RESHADE_PRESET_ADVANCED_NAME = "VortexDepthFX.ini"
+RESHADE_PRESET_ADVANCED_INI = """\
+PreprocessorDefinitions=
+Techniques=GloomAO@GloomAO.fx,prod80_02_Bloom@PD80_02_Bloom.fx,prod80_04_ContrastBrightnessSaturation@PD80_04_Contrast_Brightness_Saturation.fx,prod80_05_LumaSharpen@PD80_05_Sharpening.fx
+TechniquesEnabled=GloomAO@GloomAO.fx,prod80_02_Bloom@PD80_02_Bloom.fx,prod80_04_ContrastBrightnessSaturation@PD80_04_Contrast_Brightness_Saturation.fx,prod80_05_LumaSharpen@PD80_05_Sharpening.fx
+
+[GloomAO.fx]
+fAOIntensity=0.600000
+fAORadius=4.000000
+fAOBias=0.050000
+fAOFadeRange=0.700000
+
+[PD80_02_Bloom.fx]
+BloomAmount=0.140000
+BloomThreshold=0.800000
+BloomSaturation=1.150000
+
+[PD80_04_Contrast_Brightness_Saturation.fx]
+brightness=0.010000
+contrast=0.070000
+saturation=0.090000
+vibrance=0.130000
+
+[PD80_05_Sharpening.fx]
+sharp_strength=0.650000
+sharp_clamp=0.035000
+"""
+
+# Standard ReShade.ini — depth buffer disabled (prevents UI flicker)
 RESHADE_INI_CONTENT = """\
 [GENERAL]
 EffectSearchPaths=.\\reshade-shaders\\Shaders
@@ -136,6 +166,25 @@ NewVaultMode=0
 [DX12]
 DisableDepth=1
 """.format(preset=RESHADE_PRESET_NAME)
+
+# Advanced ReShade.ini — depth buffer ENABLED (allows SSAO shadows, may cause flicker/crash)
+RESHADE_INI_DEPTH_CONTENT = """\
+[GENERAL]
+EffectSearchPaths=.\\reshade-shaders\\Shaders
+TextureSearchPaths=.\\reshade-shaders\\Textures
+PresetPath=.\\{preset}
+PerformanceMode=0
+SkipLoadingDisabledEffects=1
+ShowFPS=0
+ShowClock=0
+NoDebugInfo=1
+NewVaultMode=0
+
+[DX12]
+DisableDepth=0
+DepthInputFormatOverride=0
+""".format(preset=RESHADE_PRESET_ADVANCED_NAME)
+
 
 # Fallback slot size if we can't calculate the real TTF size.
 # 407 KB is a safe lower bound based on observed Inter font sizes in Vortex.
@@ -869,8 +918,9 @@ class ReShadeManager:
     def uninstall() -> tuple[bool, str]:
         """Remove all ReShade files from Vortex directory."""
         removed = []
+        adv_preset = ROOT_DIR / RESHADE_PRESET_ADVANCED_NAME
         for f in [ReShadeManager.DLL_ACTIVE, ReShadeManager.DLL_DISABLED,
-                  ReShadeManager.INI_PATH, ReShadeManager.PRESET_PATH]:
+                  ReShadeManager.INI_PATH, ReShadeManager.PRESET_PATH, adv_preset]:
             if f.exists():
                 f.unlink()
                 removed.append(f.name)
@@ -882,6 +932,34 @@ class ReShadeManager:
             return True, f"Removed: {', '.join(removed)}"
         return True, "Nothing to remove."
 
+    @staticmethod
+    def is_depth_enabled() -> bool:
+        """Returns True if depth buffer effects (SSAO) are active in the current ReShade.ini."""
+        if not ReShadeManager.INI_PATH.exists():
+            return False
+        txt = ReShadeManager.INI_PATH.read_text(encoding="utf-8", errors="ignore")
+        return "DisableDepth=0" in txt
+
+    @staticmethod
+    def enable_depth_mode() -> tuple[bool, str]:
+        """Switch to depth-buffer preset (SSAO shadows). May cause UI flicker/crash."""
+        if not ReShadeManager.is_installed():
+            return False, "Install Cinematic Shaders first."
+        (ROOT_DIR / RESHADE_PRESET_ADVANCED_NAME).write_text(
+            RESHADE_PRESET_ADVANCED_INI, encoding="utf-8"
+        )
+        ReShadeManager.INI_PATH.write_text(RESHADE_INI_DEPTH_CONTENT, encoding="utf-8")
+        return True, "☀️ Depth FX enabled! SSAO shadows are now active."
+
+    @staticmethod
+    def disable_depth_mode() -> tuple[bool, str]:
+        """Revert to safe preset without depth buffer."""
+        ReShadeManager.INI_PATH.write_text(RESHADE_INI_CONTENT, encoding="utf-8")
+        adv = ROOT_DIR / RESHADE_PRESET_ADVANCED_NAME
+        if adv.exists():
+            adv.unlink()
+        return True, "Depth FX disabled — stable mode restored."
+
 
 class ReShadeInstallWorker(QThread):
     """Background thread for ReShade download & install."""
@@ -891,6 +969,7 @@ class ReShadeInstallWorker(QThread):
     def run(self):
         ok, msg = ReShadeManager.install(progress_cb=lambda p: self.progress.emit(p))
         self.finished.emit(ok, msg)
+
 
 
 class ChatBubblePatcher:
@@ -1950,7 +2029,7 @@ class VortexLauncher(QMainWindow):
         # Recommendation & stability note
         rs_note = QLabel(
             "💡 Recommended for Mid/High-End PCs (Dedicated NVIDIA / AMD GPU).\n"
-            "⚠️ Note: Shaders compile on initial launch or map load. If the game closes once, simply relaunch—it stabilizes immediately!"
+            "⚠️ If the game closes once on first launch, just reopen — it stabilizes immediately!"
         )
         rs_note.setStyleSheet(
             "color:#A89BC2; font-size:10px; background:rgba(124,58,237,0.08);"
@@ -1959,6 +2038,48 @@ class VortexLauncher(QMainWindow):
         )
         rs_note.setWordWrap(True)
         lay.addWidget(rs_note)
+
+        # ── Advanced: Depth Buffer Effects (SSAO Shadows) ─────────────────────
+        depth_div = QFrame()
+        depth_div.setFrameShape(QFrame.Shape.HLine)
+        depth_div.setFixedHeight(1)
+        depth_div.setStyleSheet("background:rgba(220,50,50,0.3);")
+        lay.addWidget(depth_div)
+
+        depth_row = QHBoxLayout()
+        depth_row.setSpacing(8)
+        depth_info = QVBoxLayout()
+        depth_info.setSpacing(1)
+        depth_info.addWidget(QLabel("🌑 Depth FX — SSAO Shadows (Experimental)",
+            styleSheet="color:#FF8080; font-size:12px; font-weight:700;"))
+        depth_info.addWidget(QLabel("Adds real contact shadows & ambient occlusion (depth buffer required)",
+            styleSheet="color:#6A5A8A; font-size:10px;"))
+        depth_row.addLayout(depth_info, 1)
+
+        depth_on = ReShadeManager.is_depth_enabled()
+        self.depth_toggle_btn = QPushButton("Disable" if depth_on else "Enable")
+        self.depth_toggle_btn.setStyleSheet(
+            self._btn_qss("#B91C1C") if depth_on else self._outline_qss()
+        )
+        self.depth_toggle_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.depth_toggle_btn.setFixedHeight(30)
+        self.depth_toggle_btn.setFixedWidth(80)
+        self.depth_toggle_btn.setEnabled(ReShadeManager.is_installed())
+        self.depth_toggle_btn.clicked.connect(self._toggle_depth_fx)
+        depth_row.addWidget(self.depth_toggle_btn)
+        lay.addLayout(depth_row)
+
+        depth_note = QLabel(
+            "🔴 DANGER ZONE: Enabling depth buffer may cause UI flickering, map-load crashes,\n"
+            "   or instability. If game crashes, relaunch normally — depth FX will auto-disable."
+        )
+        depth_note.setStyleSheet(
+            "color:#FF8080; font-size:10px; background:rgba(180,0,0,0.10);"
+            "border:1px solid rgba(180,0,0,0.3); border-radius:6px;"
+            "padding:6px 10px;"
+        )
+        depth_note.setWordWrap(True)
+        lay.addWidget(depth_note)
 
         self.reshade_progress = QProgressBar()
         self.reshade_progress.setRange(0, 100)
@@ -1970,6 +2091,7 @@ class VortexLauncher(QMainWindow):
         )
         self.reshade_progress.setVisible(False)
         lay.addWidget(self.reshade_progress)
+
 
         lay.addStretch()
         scroll.setWidget(inner_widget)
@@ -2022,6 +2144,7 @@ class VortexLauncher(QMainWindow):
     def _refresh_reshade_ui(self):
         installed = ReShadeManager.is_installed()
         enabled   = ReShadeManager.is_enabled()
+        depth_on  = ReShadeManager.is_depth_enabled()
         if installed and enabled:
             self.reshade_status_lbl.setText("🟢 Active")
             self.reshade_toggle_btn.setText("Disable")
@@ -2031,6 +2154,59 @@ class VortexLauncher(QMainWindow):
         else:
             self.reshade_status_lbl.setText("⚫ Not installed")
             self.reshade_toggle_btn.setText("Install")
+
+        if hasattr(self, "depth_toggle_btn"):
+            self.depth_toggle_btn.setEnabled(installed and enabled)
+            if depth_on:
+                self.depth_toggle_btn.setText("Disable")
+                self.depth_toggle_btn.setStyleSheet(self._btn_qss("#B91C1C"))
+            else:
+                self.depth_toggle_btn.setText("Enable")
+                self.depth_toggle_btn.setStyleSheet(self._outline_qss())
+
+    def _toggle_depth_fx(self):
+        """Toggle Depth FX with an explicit confirmation dialog warning."""
+        if ReShadeManager.is_depth_enabled():
+            ok, msg = ReShadeManager.disable_depth_mode()
+            self._refresh_reshade_ui()
+            self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
+            return
+
+        # Show confirmation warning
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("⚠️ DANGER: Experimental Depth FX")
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setText(
+            "<b>Are you sure you want to enable Depth FX (SSAO Shadows)?</b><br><br>"
+            "This feature hooks into the 3D Depth Buffer to generate contact shadows and Ambient Occlusion.<br><br>"
+            "<b>⚠️ Known Risks:</b><br>"
+            "• In-game UI & chat bubbles may flicker or disappear<br>"
+            "• The game might crash when loading maps<br>"
+            "• Requires high GPU power<br><br>"
+            "<i>If the game crashes, simply relaunch — you can disable this anytime.</i>"
+        )
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        
+        # Apply dark theme styling to dialog
+        acc = self.cfg.get("accent", "#7C3AED")
+        msg_box.setStyleSheet(f"""
+            QMessageBox {{ background: #160D2A; color: #E2D9FF; font-family: 'Segoe UI', sans-serif; }}
+            QLabel {{ color: #E2D9FF; font-size: 12px; }}
+            QPushButton {{
+                background: {acc};
+                color: #FFFFFF;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 16px;
+                font-weight: bold;
+            }}
+        """)
+        
+        if msg_box.exec() == QMessageBox.StandardButton.Yes:
+            ok, msg = ReShadeManager.enable_depth_mode()
+            self._refresh_reshade_ui()
+            self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
 
     def _uninstall_reshade(self):
         ok, msg = ReShadeManager.uninstall()
