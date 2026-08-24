@@ -88,62 +88,37 @@ SCREENSHOTS_DIR.mkdir(exist_ok=True)
 BUBBLES_DIR.mkdir(exist_ok=True)
 
 # ReShade Cinematic Shader paths
-RESHADE_SETUP_URL  = "https://reshade.me/downloads/ReShade_Setup_6.3.3.exe"
-RESHADE_CACHE_DIR  = BASE_DIR / "reshade_cache"
-RESHADE_SETUP_EXE  = RESHADE_CACHE_DIR / "ReShade_Setup.exe"
-RESHADE_DLL_NAME   = "dxgi.dll"          # DX12 hook — renamed from ReShade64.dll
-RESHADE_INI_NAME   = "ReShade.ini"
+RESHADE_SETUP_URL   = "https://reshade.me/downloads/ReShade_Setup_6.3.3.exe"
+RESHADE_CACHE_DIR   = BASE_DIR / "reshade_cache"
+RESHADE_SETUP_EXE   = RESHADE_CACHE_DIR / "ReShade_Setup.exe"
+RESHADE_DLL_NAME    = "dxgi.dll"          # DX12 hook — renamed from ReShade64.dll
+RESHADE_INI_NAME    = "ReShade.ini"
 RESHADE_PRESET_NAME = "VortexCinematic.ini"
+RESHADE_SHADERS_SRC = BASE_DIR / "reshade-shaders"
 
-# Bundled cinematic ReShade preset (Bloom + HDR + Sharpen + Ambient)
+# Bundled cinematic ReShade preset (Bloom + HDR/Color + Sharpening + Filmic Tonemap)
 RESHADE_PRESET_INI = """\
-[ADOF.fx]
-[Bloom.fx]
-BloomThreshold=0.800
-BloomAmount=0.300
-BloomSaturation=1.200
-[HDR.fx]
-HDRPower=1.100
-radius1=0.793
-radius2=0.870
-[LumaSharpen.fx]
-sharp_strength=0.750
-sharp_clamp=0.035
-pattern=1
-offset_bias=1.000
-[AmbientLight.fx]
-alDebug=0
-alAdaptBaseMult=1.000
-alInt=10.150
-AL_DirtTex=0
-AL_Adaptation=1
-alAdaptBaseBlackLvL=2
-AL_Vibrance=0
-AL_Adaptive=2
-[Vibrance.fx]
-Vibrance=0.250
-VibranceRGBBalance=1.000 1.000 1.000
-[Clarity.fx]
-ClarityRadius=3
-ClarityOffset=2.000
-ClarityDarkIntensity=0.400
-ClarityBlendMode=0
-ClarityBlendIfDark=50
-ClarityBlendIfLight=205
-ClarityStrength=0.400
-ClarityLightIntensity=0.000
-ClarityViewBlendIfMask=0
-ClarityViewMask=0
-[Technicolor2.fx]
-ColorStrength=0.200 0.200 0.200
-Brightness=1.000
-Saturation=0.850
-Strength=0.400
-
 PreprocessorDefinitions=
+Techniques=prod80_02_Bloom@PD80_02_Bloom.fx,prod80_04_ContrastBrightnessSaturation@PD80_04_Contrast_Brightness_Saturation.fx,prod80_05_LumaSharpen@PD80_05_Sharpening.fx,prod80_03_FilmicTonemap@PD80_03_Filmic_Adaptation.fx
+TechniquesEnabled=prod80_02_Bloom@PD80_02_Bloom.fx,prod80_04_ContrastBrightnessSaturation@PD80_04_Contrast_Brightness_Saturation.fx,prod80_05_LumaSharpen@PD80_05_Sharpening.fx,prod80_03_FilmicTonemap@PD80_03_Filmic_Adaptation.fx
 
-Techniques=LumaSharpen,HDR,Bloom,AmbientLight,Vibrance,Clarity
-TechniquesEnabled=LumaSharpen,HDR,Bloom,AmbientLight,Vibrance,Clarity
+[PD80_02_Bloom.fx]
+BloomAmount=0.400000
+BloomThreshold=0.600000
+BloomSaturation=1.300000
+
+[PD80_04_Contrast_Brightness_Saturation.fx]
+brightness=0.030000
+contrast=0.100000
+saturation=0.200000
+vibrance=0.280000
+
+[PD80_05_Sharpening.fx]
+sharp_strength=0.700000
+sharp_clamp=0.035000
+
+[PD80_03_Filmic_Adaptation.fx]
+fAdaptBaseMult=1.000000
 """
 
 RESHADE_INI_CONTENT = """\
@@ -151,9 +126,15 @@ RESHADE_INI_CONTENT = """\
 EffectSearchPaths=.\\reshade-shaders\\Shaders
 TextureSearchPaths=.\\reshade-shaders\\Textures
 PresetPath=.\\{preset}
-PerformanceMode=0
+PerformanceMode=1
 SkipLoadingDisabledEffects=1
+ShowFPS=0
+ShowClock=0
+NoDebugInfo=1
 NewVaultMode=0
+
+[DX12]
+DisableDepth=1
 """.format(preset=RESHADE_PRESET_NAME)
 
 # Fallback slot size if we can't calculate the real TTF size.
@@ -762,9 +743,25 @@ class ReShadeManager:
 
     @staticmethod
     def _write_configs():
-        """Write ReShade.ini and the cinematic preset file next to Vortex.exe."""
+        """Write ReShade.ini, copy bundled reshade-shaders, and write the cinematic preset file."""
         ReShadeManager.INI_PATH.write_text(RESHADE_INI_CONTENT, encoding="utf-8")
         ReShadeManager.PRESET_PATH.write_text(RESHADE_PRESET_INI, encoding="utf-8")
+
+        # Copy reshade-shaders folder next to Vortex.exe
+        dst_shaders = ROOT_DIR / "reshade-shaders"
+        src_shaders = RESHADE_SHADERS_SRC
+        if not src_shaders.exists():
+            src_shaders = BASE_DIR / "launcher" / "reshade-shaders"
+        if not src_shaders.exists():
+            src_shaders = BASE_DIR.parent / "launcher" / "reshade-shaders"
+
+        if src_shaders.exists():
+            try:
+                if dst_shaders.exists():
+                    shutil.rmtree(dst_shaders, ignore_errors=True)
+                shutil.copytree(src_shaders, dst_shaders)
+            except Exception as e:
+                print("Warning copying reshade-shaders:", e)
 
     @staticmethod
     def install(progress_cb=None) -> tuple[bool, str]:

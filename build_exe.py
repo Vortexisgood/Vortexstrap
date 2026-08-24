@@ -54,7 +54,7 @@ def build():
         
         # Gerekli kaynak klasörlerini dist içine kopyala
         import shutil
-        for folder_name in ["Mouseİmleci", "fonts", "screenshots", "images", "chat_bubbles"]:
+        for folder_name in ["Mouseİmleci", "fonts", "screenshots", "images", "chat_bubbles", "reshade-shaders"]:
             src_folder = BASE_DIR / "launcher" / folder_name
             if not src_folder.exists():
                 src_folder = BASE_DIR / folder_name
@@ -79,9 +79,16 @@ def build():
                 shutil.copy2(icon_f, dist_dir / icon_f.name)
                 print(f"Copied {icon_f.name} to dist")
 
+        # Create Release ZIP archive
+        zip_path = BASE_DIR / "dist" / "VortexStrap-v1.2.0-Windows"
+        print(f"\nPackaging ZIP archive: {zip_path}.zip ...")
+        shutil.make_archive(str(zip_path), 'zip', dist_dir)
+        print(f"Created Release ZIP: {zip_path}.zip")
+
         print("\n=======================================================")
-        print("SUCCESS! VortexStrap.exe has been created inside:")
-        print(f" -> {dist_dir / 'VortexStrap.exe'}")
+        print("SUCCESS! VortexStrap v1.2.0 build complete:")
+        print(f" -> EXE: {dist_dir / 'VortexStrap.exe'}")
+        print(f" -> ZIP: {zip_path}.zip")
         print("=======================================================")
     else:
         print("\nBuild failed with exit code:", result.returncode)
