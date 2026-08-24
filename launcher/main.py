@@ -1292,7 +1292,7 @@ class VortexLauncher(QMainWindow):
         if fun_mode in ("ultra_performance", "speedrunner"):
             env["WGPU_POWER_PREF"]   = "high"
             env["WGPU_FXAA"]         = "0"
-        elif fun_mode == "cinematic":
+        elif fun_mode in ("ultra_realistic", "cinematic"):
             env["WGPU_POWER_PREF"]   = "high"
             env["WGPU_FXAA"]         = "1"
         elif fun_mode == "battery_saver":
@@ -1635,9 +1635,10 @@ class VortexLauncher(QMainWindow):
         self.fun_combo = QComboBox()
         fun_modes = [
             ("none",              "Off (Standard Balanced Quality)"),
-            ("ultra_performance","⚡ Ultra Performance / Speedrunner Mode (High FPS, Low Latency)"),
-            ("cinematic",        "🎮 High Quality / Cinematic Mode (Full Anti-Aliasing)"),
-            ("battery_saver",    "🔋 Battery Saver / Eco Mode (Power Efficient)"),
+            ("ultra_realistic",   "✨ Ultra Realistic / RTX Mode (Maximum Fidelity & FXAA)"),
+            ("ultra_performance", "⚡ Ultra Performance / Speedrunner Mode (High FPS, Low Latency)"),
+            ("cinematic",         "🎬 Cinematic Movie Mode (Smooth Anti-Aliasing)"),
+            ("battery_saver",     "🔋 Battery Saver / Eco Mode (Power Efficient)"),
         ]
         for key, name in fun_modes:
             self.fun_combo.addItem(name, key)
