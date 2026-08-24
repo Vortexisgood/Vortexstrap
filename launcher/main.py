@@ -87,6 +87,75 @@ FONTS_DIR.mkdir(exist_ok=True)
 SCREENSHOTS_DIR.mkdir(exist_ok=True)
 BUBBLES_DIR.mkdir(exist_ok=True)
 
+# ReShade Cinematic Shader paths
+RESHADE_SETUP_URL  = "https://reshade.me/downloads/ReShade_Setup_6.3.3.exe"
+RESHADE_CACHE_DIR  = BASE_DIR / "reshade_cache"
+RESHADE_SETUP_EXE  = RESHADE_CACHE_DIR / "ReShade_Setup.exe"
+RESHADE_DLL_NAME   = "dxgi.dll"          # DX12 hook — renamed from ReShade64.dll
+RESHADE_INI_NAME   = "ReShade.ini"
+RESHADE_PRESET_NAME = "VortexCinematic.ini"
+
+# Bundled cinematic ReShade preset (Bloom + HDR + Sharpen + Ambient)
+RESHADE_PRESET_INI = """\
+[ADOF.fx]
+[Bloom.fx]
+BloomThreshold=0.800
+BloomAmount=0.300
+BloomSaturation=1.200
+[HDR.fx]
+HDRPower=1.100
+radius1=0.793
+radius2=0.870
+[LumaSharpen.fx]
+sharp_strength=0.750
+sharp_clamp=0.035
+pattern=1
+offset_bias=1.000
+[AmbientLight.fx]
+alDebug=0
+alAdaptBaseMult=1.000
+alInt=10.150
+AL_DirtTex=0
+AL_Adaptation=1
+alAdaptBaseBlackLvL=2
+AL_Vibrance=0
+AL_Adaptive=2
+[Vibrance.fx]
+Vibrance=0.250
+VibranceRGBBalance=1.000 1.000 1.000
+[Clarity.fx]
+ClarityRadius=3
+ClarityOffset=2.000
+ClarityDarkIntensity=0.400
+ClarityBlendMode=0
+ClarityBlendIfDark=50
+ClarityBlendIfLight=205
+ClarityStrength=0.400
+ClarityLightIntensity=0.000
+ClarityViewBlendIfMask=0
+ClarityViewMask=0
+[Technicolor2.fx]
+ColorStrength=0.200 0.200 0.200
+Brightness=1.000
+Saturation=0.850
+Strength=0.400
+
+PreprocessorDefinitions=
+
+Techniques=LumaSharpen,HDR,Bloom,AmbientLight,Vibrance,Clarity
+TechniquesEnabled=LumaSharpen,HDR,Bloom,AmbientLight,Vibrance,Clarity
+"""
+
+RESHADE_INI_CONTENT = """\
+[GENERAL]
+EffectSearchPaths=.\\reshade-shaders\\Shaders
+TextureSearchPaths=.\\reshade-shaders\\Textures
+PresetPath=.\\{preset}
+PerformanceMode=0
+SkipLoadingDisabledEffects=1
+NewVaultMode=0
+""".format(preset=RESHADE_PRESET_NAME)
+
 # Fallback slot size if we can't calculate the real TTF size.
 # 407 KB is a safe lower bound based on observed Inter font sizes in Vortex.
 _FALLBACK_SLOT_SIZE = 407_054
@@ -670,7 +739,154 @@ class FontPatcher:
             return False, f"Restore error: {e}"
 
 
+
+class ReShadeManager:
+    """
+    Downloads ReShade, extracts ReShade64.dll, renames it to dxgi.dll,
+    places it next to Vortex.exe, and writes the cinematic preset + ReShade.ini.
+    Enables / disables the shader overlay by renaming the DLL.
+    """
+
+    DLL_ACTIVE   = ROOT_DIR / RESHADE_DLL_NAME           # dxgi.dll — active
+    DLL_DISABLED = ROOT_DIR / (RESHADE_DLL_NAME + ".off") # dxgi.dll.off — dormant
+    INI_PATH     = ROOT_DIR / RESHADE_INI_NAME
+    PRESET_PATH  = ROOT_DIR / RESHADE_PRESET_NAME
+
+    @staticmethod
+    def is_installed() -> bool:
+        return ReShadeManager.DLL_ACTIVE.exists() or ReShadeManager.DLL_DISABLED.exists()
+
+    @staticmethod
+    def is_enabled() -> bool:
+        return ReShadeManager.DLL_ACTIVE.exists()
+
+    @staticmethod
+    def _write_configs():
+        """Write ReShade.ini and the cinematic preset file next to Vortex.exe."""
+        ReShadeManager.INI_PATH.write_text(RESHADE_INI_CONTENT, encoding="utf-8")
+        ReShadeManager.PRESET_PATH.write_text(RESHADE_PRESET_INI, encoding="utf-8")
+
+    @staticmethod
+    def install(progress_cb=None) -> tuple[bool, str]:
+        """
+        Downloads ReShade setup exe, extracts ReShade64.dll from it,
+        renames it to dxgi.dll beside Vortex.exe, and writes preset files.
+        progress_cb(int) is called with 0-100 progress.
+        """
+        try:
+            import urllib.request
+            import zipfile
+
+            RESHADE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+            # --- Step 1: Download (0-60%) ---
+            if progress_cb:
+                progress_cb(5)
+
+            def _reporthook(count, block_size, total_size):
+                if total_size > 0 and progress_cb:
+                    pct = min(int(count * block_size * 60 / total_size), 60)
+                    progress_cb(pct)
+
+            urllib.request.urlretrieve(RESHADE_SETUP_URL, RESHADE_SETUP_EXE, _reporthook)
+            if progress_cb:
+                progress_cb(60)
+
+            # --- Step 2: Extract ReShade64.dll from the installer (it's a zip) ---
+            reshade_dll_src = None
+            try:
+                with zipfile.ZipFile(RESHADE_SETUP_EXE, 'r') as zf:
+                    for name in zf.namelist():
+                        if "ReShade64.dll" in name or name == "ReShade64.dll":
+                            zf.extract(name, RESHADE_CACHE_DIR)
+                            reshade_dll_src = RESHADE_CACHE_DIR / name
+                            break
+            except Exception:
+                pass
+
+            # Fallback: the installer is actually a self-extracting 7z or NSIS exe.
+            # Try 7z if available, otherwise copy raw (some versions embed DLL at offset).
+            if reshade_dll_src is None or not reshade_dll_src.exists():
+                sevenzip = shutil.which("7z") or shutil.which("7za")
+                if sevenzip:
+                    subprocess.run(
+                        [sevenzip, "e", str(RESHADE_SETUP_EXE),
+                         "-o" + str(RESHADE_CACHE_DIR), "ReShade64.dll", "-y"],
+                        capture_output=True
+                    )
+                    reshade_dll_src = RESHADE_CACHE_DIR / "ReShade64.dll"
+
+            if reshade_dll_src is None or not reshade_dll_src.exists():
+                return False, (
+                    "Could not extract ReShade64.dll from the installer.\n"
+                    "Please install ReShade manually from reshade.me,\n"
+                    "then rename ReShade64.dll to dxgi.dll next to Vortex.exe."
+                )
+
+            if progress_cb:
+                progress_cb(80)
+
+            # --- Step 3: Place DLL + write preset/ini ---
+            shutil.copy2(reshade_dll_src, ReShadeManager.DLL_ACTIVE)
+            ReShadeManager._write_configs()
+
+            if progress_cb:
+                progress_cb(100)
+
+            return True, "ReShade Cinematic Shaders installed successfully!"
+
+        except Exception as e:
+            return False, f"Installation failed: {e}"
+
+    @staticmethod
+    def enable() -> tuple[bool, str]:
+        """Activate shaders: rename dxgi.dll.off -> dxgi.dll"""
+        if ReShadeManager.DLL_ACTIVE.exists():
+            return True, "Already enabled."
+        if ReShadeManager.DLL_DISABLED.exists():
+            ReShadeManager.DLL_DISABLED.rename(ReShadeManager.DLL_ACTIVE)
+            ReShadeManager._write_configs()
+            return True, "Cinematic Shaders enabled!"
+        return False, "ReShade not installed. Use the Install button first."
+
+    @staticmethod
+    def disable() -> tuple[bool, str]:
+        """Deactivate shaders: rename dxgi.dll -> dxgi.dll.off"""
+        if ReShadeManager.DLL_ACTIVE.exists():
+            ReShadeManager.DLL_ACTIVE.rename(ReShadeManager.DLL_DISABLED)
+            return True, "Cinematic Shaders disabled."
+        return True, "Already disabled."
+
+    @staticmethod
+    def uninstall() -> tuple[bool, str]:
+        """Remove all ReShade files from Vortex directory."""
+        removed = []
+        for f in [ReShadeManager.DLL_ACTIVE, ReShadeManager.DLL_DISABLED,
+                  ReShadeManager.INI_PATH, ReShadeManager.PRESET_PATH]:
+            if f.exists():
+                f.unlink()
+                removed.append(f.name)
+        shaders_dir = ROOT_DIR / "reshade-shaders"
+        if shaders_dir.exists():
+            shutil.rmtree(shaders_dir, ignore_errors=True)
+            removed.append("reshade-shaders/")
+        if removed:
+            return True, f"Removed: {', '.join(removed)}"
+        return True, "Nothing to remove."
+
+
+class ReShadeInstallWorker(QThread):
+    """Background thread for ReShade download & install."""
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(bool, str)
+
+    def run(self):
+        ok, msg = ReShadeManager.install(progress_cb=lambda p: self.progress.emit(p))
+        self.finished.emit(ok, msg)
+
+
 class ChatBubblePatcher:
+
     """
     Patches and manages in-game chat bubble styles, themes, and colors for Vortex.exe.
     """
@@ -1696,6 +1912,73 @@ class VortexLauncher(QMainWindow):
         )
         lay.addWidget(self.software_rendering_cb)
 
+        # ── Cinematic Shader (ReShade) Panel ──────────────────────────────────
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("color: rgba(124,58,237,0.25);")
+        lay.addWidget(sep)
+
+        shader_title = QLabel("✨ Cinematic Shaders (ReShade)")
+        shader_title.setStyleSheet("color:#E2D9FF; font-size:12px; font-weight:700;")
+        lay.addWidget(shader_title)
+
+        shader_desc = QLabel(
+            "Adds real-time Bloom, HDR lighting, ambient shadows, depth & color "
+            "grading on top of Vortex — without modifying any game files."
+        )
+        shader_desc.setStyleSheet("color:#6A5A8A; font-size:10px;")
+        shader_desc.setWordWrap(True)
+        lay.addWidget(shader_desc)
+
+        reshade_row = QHBoxLayout()
+        reshade_row.setSpacing(8)
+
+        # Status label
+        installed = ReShadeManager.is_installed()
+        enabled   = ReShadeManager.is_enabled()
+        if installed and enabled:
+            status_text = "🟢 Active"
+        elif installed:
+            status_text = "🟡 Installed (disabled)"
+        else:
+            status_text = "⚫ Not installed"
+
+        self.reshade_status_lbl = QLabel(status_text)
+        self.reshade_status_lbl.setStyleSheet("color:#A89BC2; font-size:11px;")
+        reshade_row.addWidget(self.reshade_status_lbl)
+        reshade_row.addStretch()
+
+        self.reshade_toggle_btn = QPushButton(
+            "Disable Shaders" if enabled else ("Enable Shaders" if installed else "Install & Enable")
+        )
+        self.reshade_toggle_btn.setStyleSheet(self._btn_qss(acc))
+        self.reshade_toggle_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.reshade_toggle_btn.setFixedHeight(32)
+        self.reshade_toggle_btn.clicked.connect(self._toggle_reshade)
+        reshade_row.addWidget(self.reshade_toggle_btn)
+
+        if installed:
+            uninstall_btn = QPushButton("Uninstall")
+            uninstall_btn.setStyleSheet(self._outline_qss())
+            uninstall_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            uninstall_btn.setFixedHeight(32)
+            uninstall_btn.clicked.connect(self._uninstall_reshade)
+            reshade_row.addWidget(uninstall_btn)
+
+        lay.addLayout(reshade_row)
+
+        # Progress bar (hidden by default, shown during install)
+        self.reshade_progress = QProgressBar()
+        self.reshade_progress.setRange(0, 100)
+        self.reshade_progress.setFixedHeight(6)
+        self.reshade_progress.setTextVisible(False)
+        self.reshade_progress.setStyleSheet(
+            f"QProgressBar{{background:rgba(255,255,255,0.08);border-radius:3px;}}"
+            f"QProgressBar::chunk{{background:{acc};border-radius:3px;}}"
+        )
+        self.reshade_progress.setVisible(False)
+        lay.addWidget(self.reshade_progress)
+
         lay.addStretch()
 
         # Save Button
@@ -1707,6 +1990,54 @@ class VortexLauncher(QMainWindow):
 
         return card
 
+    def _toggle_reshade(self):
+        """Install-and-enable or toggle enable/disable ReShade."""
+        if not ReShadeManager.is_installed():
+            # Start install in background
+            self.reshade_progress.setVisible(True)
+            self.reshade_progress.setValue(0)
+            self.reshade_toggle_btn.setEnabled(False)
+            self.reshade_toggle_btn.setText("Installing…")
+            self._reshade_worker = ReShadeInstallWorker()
+            self._reshade_worker.progress.connect(self.reshade_progress.setValue)
+            self._reshade_worker.finished.connect(self._on_reshade_installed)
+            self._reshade_worker.start()
+        elif ReShadeManager.is_enabled():
+            ok, msg = ReShadeManager.disable()
+            self._refresh_reshade_ui()
+            self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
+        else:
+            ok, msg = ReShadeManager.enable()
+            self._refresh_reshade_ui()
+            self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
+
+    def _on_reshade_installed(self, ok: bool, msg: str):
+        self.reshade_progress.setVisible(False)
+        self.reshade_toggle_btn.setEnabled(True)
+        if ok:
+            self.badge.set_ok(msg)
+        else:
+            self.badge.set_err(msg)
+        self._refresh_reshade_ui()
+
+    def _refresh_reshade_ui(self):
+        installed = ReShadeManager.is_installed()
+        enabled   = ReShadeManager.is_enabled()
+        if installed and enabled:
+            self.reshade_status_lbl.setText("🟢 Active")
+            self.reshade_toggle_btn.setText("Disable Shaders")
+        elif installed:
+            self.reshade_status_lbl.setText("🟡 Installed (disabled)")
+            self.reshade_toggle_btn.setText("Enable Shaders")
+        else:
+            self.reshade_status_lbl.setText("⚫ Not installed")
+            self.reshade_toggle_btn.setText("Install & Enable")
+
+    def _uninstall_reshade(self):
+        ok, msg = ReShadeManager.uninstall()
+        self._refresh_reshade_ui()
+        self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
+
     def _save_render_settings(self):
         self.cfg["render_backend"]      = self.backend_combo.currentData()
         self.cfg["fun_mode"]            = self.fun_combo.currentData()
@@ -1715,6 +2046,7 @@ class VortexLauncher(QMainWindow):
         self.cfg["software_rendering"]   = self.software_rendering_cb.isChecked()
         save_cfg(self.cfg)
         self.badge.set_ok("Render & Graphics settings saved! Vortex will launch with these settings.")
+
 
     # ── TAB 3: Ekran Görüntüleri (Gallery) ────────────────────────────────────
     def _gallery_tab(self) -> Card:
