@@ -1287,21 +1287,17 @@ class VortexLauncher(QMainWindow):
         else:
             env["WGPU_FXAA"] = "0"
 
-        # ── Fun & Retro Modes ────────────────────────────────────────────────
+        # ── Performance & Graphics Presets ──────────────────────────────────
         fun_mode = self.cfg.get("fun_mode", "none")
-        if fun_mode == "retro_240p":
-            env["WGPU_SCALE_FACTOR"] = "0.3"
-            env["WGPU_FXAA"]         = "0"
-        elif fun_mode == "arcade_8bit":
-            env["WGPU_SCALE_FACTOR"] = "0.2"
-            env["WGPU_FXAA"]         = "0"
-        elif fun_mode == "crt_vintage":
-            env["WGPU_SCALE_FACTOR"] = "0.4"
-            env["WGPU_FXAA"]         = "0"
-        elif fun_mode == "speedrunner":
-            env["WGPU_SCALE_FACTOR"] = "0.5"
-            env["WGPU_FXAA"]         = "0"
+        if fun_mode in ("ultra_performance", "speedrunner"):
             env["WGPU_POWER_PREF"]   = "high"
+            env["WGPU_FXAA"]         = "0"
+        elif fun_mode == "cinematic":
+            env["WGPU_POWER_PREF"]   = "high"
+            env["WGPU_FXAA"]         = "1"
+        elif fun_mode == "battery_saver":
+            env["WGPU_POWER_PREF"]   = "low"
+            env["WGPU_FXAA"]         = "0"
 
         return env, extra_args
 
@@ -1634,15 +1630,14 @@ class VortexLauncher(QMainWindow):
         self.backend_combo.setFixedHeight(36)
         lay.addWidget(self.backend_combo)
 
-        # 1b. Fun & Retro Modes Combo
-        lay.addWidget(QLabel("🕹️  Fun & Retro Modes (Graphics Effects):"))
+        # 1b. Performance & Graphics Presets
+        lay.addWidget(QLabel("⚡ Performance & Graphics Presets:"))
         self.fun_combo = QComboBox()
         fun_modes = [
-            ("none",         "Off (Standard Modern Resolution)"),
-            ("retro_240p",   "🕹️  Retro Pixelated 240p (PS1 / N64 Nostalgia)"),
-            ("arcade_8bit",   "👾  8-Bit Arcade Mode (Low-Res + Pixel Textures)"),
-            ("crt_vintage",   "📺  CRT Vintage Display (Low-Poly Filter)"),
-            ("speedrunner",   "⚡  Potato PC / Speedrunner Mode (Ultra Performance)"),
+            ("none",              "Off (Standard Balanced Quality)"),
+            ("ultra_performance","⚡ Ultra Performance / Speedrunner Mode (High FPS, Low Latency)"),
+            ("cinematic",        "🎮 High Quality / Cinematic Mode (Full Anti-Aliasing)"),
+            ("battery_saver",    "🔋 Battery Saver / Eco Mode (Power Efficient)"),
         ]
         for key, name in fun_modes:
             self.fun_combo.addItem(name, key)
