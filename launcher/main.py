@@ -103,18 +103,18 @@ Techniques=prod80_02_Bloom@PD80_02_Bloom.fx,prod80_04_ContrastBrightnessSaturati
 TechniquesEnabled=prod80_02_Bloom@PD80_02_Bloom.fx,prod80_04_ContrastBrightnessSaturation@PD80_04_Contrast_Brightness_Saturation.fx,prod80_05_LumaSharpen@PD80_05_Sharpening.fx,prod80_03_FilmicTonemap@PD80_03_Filmic_Adaptation.fx
 
 [PD80_02_Bloom.fx]
-BloomAmount=0.400000
-BloomThreshold=0.600000
-BloomSaturation=1.300000
+BloomAmount=0.120000
+BloomThreshold=0.820000
+BloomSaturation=1.100000
 
 [PD80_04_Contrast_Brightness_Saturation.fx]
-brightness=0.030000
-contrast=0.100000
-saturation=0.200000
-vibrance=0.280000
+brightness=0.010000
+contrast=0.060000
+saturation=0.080000
+vibrance=0.120000
 
 [PD80_05_Sharpening.fx]
-sharp_strength=0.700000
+sharp_strength=0.600000
 sharp_clamp=0.035000
 
 [PD80_03_Filmic_Adaptation.fx]
@@ -1946,6 +1946,19 @@ class VortexLauncher(QMainWindow):
         self.reshade_toggle_btn.clicked.connect(self._toggle_reshade)
         reshade_row.addWidget(self.reshade_toggle_btn)
         lay.addLayout(reshade_row)
+
+        # Recommendation & stability note
+        rs_note = QLabel(
+            "💡 Recommended for Mid/High-End PCs (Dedicated NVIDIA / AMD GPU).\n"
+            "⚠️ Note: Shaders compile on initial launch or map load. If the game closes once, simply relaunch—it stabilizes immediately!"
+        )
+        rs_note.setStyleSheet(
+            "color:#A89BC2; font-size:10px; background:rgba(124,58,237,0.08);"
+            "border:1px solid rgba(124,58,237,0.25); border-radius:6px;"
+            "padding:6px 10px;"
+        )
+        rs_note.setWordWrap(True)
+        lay.addWidget(rs_note)
 
         self.reshade_progress = QProgressBar()
         self.reshade_progress.setRange(0, 100)
