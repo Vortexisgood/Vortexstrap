@@ -783,12 +783,23 @@ class ReShadeManager:
             if progress_cb:
                 progress_cb(5)
 
-            def _reporthook(count, block_size, total_size):
-                if total_size > 0 and progress_cb:
-                    pct = min(int(count * block_size * 60 / total_size), 60)
-                    progress_cb(pct)
+            req = urllib.request.Request(
+                RESHADE_SETUP_URL,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp, open(RESHADE_SETUP_EXE, "wb") as f:
+                total_size = int(resp.headers.get("Content-Length", 0))
+                downloaded = 0
+                while True:
+                    chunk = resp.read(64 * 1024)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total_size > 0 and progress_cb:
+                        pct = min(int(downloaded * 60 / total_size), 60)
+                        progress_cb(pct)
 
-            urllib.request.urlretrieve(RESHADE_SETUP_URL, RESHADE_SETUP_EXE, _reporthook)
             if progress_cb:
                 progress_cb(60)
 
@@ -1967,6 +1978,63 @@ class VortexLauncher(QMainWindow):
         outer.addWidget(bottom)
 
         return card
+
+    def _toggle_reshade(self):
+        """Install-and-enable or toggle enable/disable ReShade."""
+        if not ReShadeManager.is_installed():
+            # Start install in background
+            self.reshade_progress.setVisible(True)
+            self.reshade_progress.setValue(0)
+            self.reshade_toggle_btn.setEnabled(False)
+            self.reshade_toggle_btn.setText("Installing…")
+            self._reshade_worker = ReShadeInstallWorker()
+            self._reshade_worker.progress.connect(self.reshade_progress.setValue)
+            self._reshade_worker.finished.connect(self._on_reshade_installed)
+            self._reshade_worker.start()
+        elif ReShadeManager.is_enabled():
+            ok, msg = ReShadeManager.disable()
+            self._refresh_reshade_ui()
+            self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
+        else:
+            ok, msg = ReShadeManager.enable()
+            self._refresh_reshade_ui()
+            self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
+
+    def _on_reshade_installed(self, ok: bool, msg: str):
+        self.reshade_progress.setVisible(False)
+        self.reshade_toggle_btn.setEnabled(True)
+        if ok:
+            self.badge.set_ok(msg)
+        else:
+            self.badge.set_err(msg)
+        self._refresh_reshade_ui()
+
+    def _refresh_reshade_ui(self):
+        installed = ReShadeManager.is_installed()
+        enabled   = ReShadeManager.is_enabled()
+        if installed and enabled:
+            self.reshade_status_lbl.setText("🟢 Active")
+            self.reshade_toggle_btn.setText("Disable")
+        elif installed:
+            self.reshade_status_lbl.setText("🟡 Installed")
+            self.reshade_toggle_btn.setText("Enable")
+        else:
+            self.reshade_status_lbl.setText("⚫ Not installed")
+            self.reshade_toggle_btn.setText("Install")
+
+    def _uninstall_reshade(self):
+        ok, msg = ReShadeManager.uninstall()
+        self._refresh_reshade_ui()
+        self.badge.set_ok(msg) if ok else self.badge.set_err(msg)
+
+    def _save_render_settings(self):
+        self.cfg["render_backend"]      = self.backend_combo.currentData()
+        self.cfg["fun_mode"]            = self.fun_combo.currentData()
+        self.cfg["render_power"]        = self.power_combo.currentData()
+        self.cfg["render_antialiasing"] = self.aa_cb.isChecked()
+        self.cfg["software_rendering"]   = self.software_rendering_cb.isChecked()
+        save_cfg(self.cfg)
+        self.badge.set_ok("Render & Graphics settings saved! Vortex will launch with these settings.")
 
 
 
